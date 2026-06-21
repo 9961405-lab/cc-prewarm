@@ -35,7 +35,7 @@ export function histogram(hours, peak) {
     const label = String(h).padStart(2, "0") + ":00";
     const colored = v === 0 ? c.gray(bar || "·") : inPeak(h) ? c.cyan(bar) : c.blue(bar);
     const count = v === 0 ? c.gray("   0") : String(v).padStart(4);
-    const tag = inPeak(h) && v > 0 ? c.yellow("  ◀ peak") : "";
+    const tag = inPeak(h) && v > 0 ? c.yellow("  ◀ 高峰") : "";
     console.log("  " + c.gray(label) + " " + count + "  " + colored + tag);
   }
 }

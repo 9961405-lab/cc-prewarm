@@ -25,25 +25,25 @@ function run(bin, args) {
 export async function trigger({ agent = "claude", message = DEFAULT_MSG } = {}) {
   const spec = AGENTS[agent];
   if (!spec) {
-    console.log(c.red(`  Unknown agent "${agent}". Use "claude" or "codex".`));
+    console.log(c.red(`  未知工具 "${agent}"，请使用 "claude" 或 "codex"。`));
     return false;
   }
-  process.stdout.write(c.dim(`  Firing prewarm via ${spec.bin} … `));
+  process.stdout.write(c.dim(`  正在通过 ${spec.bin} 发送预热消息… `));
   const res = await run(spec.bin, spec.args(message));
   if (res.reason === "not-found") {
-    console.log(c.red("not found on PATH"));
+    console.log(c.red("未找到"));
     console.log(
-      c.gray(`  Install ${agent === "claude" ? "Claude Code" : "Codex"} first, or pass --agent=` +
+      c.gray(`  请先安装 ${agent === "claude" ? "Claude Code" : "Codex"}，或使用 --agent=` +
         (agent === "claude" ? "codex" : "claude"))
     );
     return false;
   }
   if (res.ok) {
-    console.log(c.green("done ✓"));
-    console.log(c.gray("  Your 5-hour window has started. It resets ~5h from now."));
+    console.log(c.green("成功 ✓"));
+    console.log(c.gray("  5 小时窗口已开启，约 5 小时后重置。"));
     return true;
   }
-  console.log(c.yellow(`exited with code ${res.code}`));
+  console.log(c.yellow(`退出码 ${res.code}`));
   return false;
 }
 

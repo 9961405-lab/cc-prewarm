@@ -22,28 +22,28 @@ function parseArgs(argv) {
 
 function help() {
   console.log(`
-${c.bold(c.cyan("⚡ cc-prewarm"))} ${c.gray("— double your Claude Code / Codex 5-hour windows")}
+${c.bold(c.cyan("⚡ cc-prewarm"))} ${c.gray("— 让 Claude Code / Codex 的 5 小时额度窗口翻倍")}
 
-${c.bold("Quick start:")}
-  cc-prewarm                    ${c.green("← interactive setup wizard (recommended)")}
+${c.bold("快速开始:")}
+  cc-prewarm                    ${c.green("← 交互式设置向导（推荐）")}
 
-${c.bold("Commands:")}
-  cc-prewarm ${c.cyan("setup")}              Interactive setup wizard (same as bare cc-prewarm)
-  cc-prewarm ${c.cyan("analyze")}            Scan local usage, recommend a trigger time
-  cc-prewarm ${c.cyan("install")}            Schedule the daily prewarm (uses analyze's pick)
-  cc-prewarm ${c.cyan("trigger")}            Fire one prewarm message now
-  cc-prewarm ${c.cyan("status")}             Estimate when your current window resets
-  cc-prewarm ${c.cyan("uninstall")}          Remove the scheduled job
+${c.bold("命令:")}
+  cc-prewarm ${c.cyan("setup")}              交互式设置向导（等同于直接运行 cc-prewarm）
+  cc-prewarm ${c.cyan("analyze")}            分析本地使用习惯，推荐最佳触发时间
+  cc-prewarm ${c.cyan("install")}            安装每日定时预热任务
+  cc-prewarm ${c.cyan("trigger")}            立即发送一条预热消息
+  cc-prewarm ${c.cyan("status")}             查看当前窗口何时重置
+  cc-prewarm ${c.cyan("uninstall")}          移除定时任务
 
-${c.bold("Options:")}
-  --agent=claude|codex     Which CLI to prewarm through (default: claude)
-  --hour=N                 Override the trigger hour for install (0-23)
-  --lead=N                 Hours before peak to fire (default: 3)
-  --dry-run                Show what install would do, without scheduling anything
+${c.bold("选项:")}
+  --agent=claude|codex     通过哪个工具预热（默认: claude）
+  --hour=N                 指定触发时间（0-23，覆盖自动推荐）
+  --lead=N                 提前于高峰几小时触发（默认: 3）
+  --dry-run                仅展示将执行的操作，不实际安装
 
-${c.gray("The 5-hour window starts on your first message and never auto-restarts.")}
-${c.gray("Fire one throwaway message before your peak hours and the reset lands")}
-${c.gray("mid-workday — so peak time spans two windows instead of one.")}
+${c.gray("5 小时窗口从你发第一条消息时开始计时，过期后不会自动重启。")}
+${c.gray("提前发一条预热消息，让重置点落在工作时段中间，高峰期即可")}
+${c.gray("享受两个窗口的额度。")}
 `);
 }
 
@@ -51,8 +51,8 @@ async function cmdAnalyze(args, { silent } = {}) {
   const { timestamps, found } = await collectTimestamps();
   if (!found || timestamps.length === 0) {
     if (!silent) {
-      console.log(c.yellow("\n  No local telemetry found at ~/.claude/telemetry."));
-      console.log(c.gray("  Use Claude Code for a day or two, then run analyze again.\n"));
+      console.log(c.yellow("\n  未找到本地遥测数据（~/.claude/telemetry）。"));
+      console.log(c.gray("  请先使用 Claude Code 一两天积累数据，然后再运行 analyze。\n"));
     }
     return null;
   }
@@ -63,25 +63,25 @@ async function cmdAnalyze(args, { silent } = {}) {
 
   if (silent) return rec;
 
-  banner("Your usage profile");
-  console.log(c.gray(`  ${total} events across ${days} day(s) of local telemetry\n`));
+  banner("你的使用画像");
+  console.log(c.gray(`  ${total} 条事件，跨 ${days} 天的本地数据\n`));
   histogram(hours, peak);
 
-  banner("Recommendation");
+  banner("推荐方案");
   console.log(
-    `  Peak hours:   ${c.bold(fmtHour(peak.start) + "–" + fmtHour(peak.end))} ` +
-      c.gray(`(${Math.round((peak.sum / total) * 100)}% of your usage)`)
+    `  高峰时段:   ${c.bold(fmtHour(peak.start) + "–" + fmtHour(peak.end))} ` +
+      c.gray(`(${Math.round((peak.sum / total) * 100)}% 的使用量集中在这)`)
   );
   console.log(
-    `  Trigger at:   ${c.bold(c.green(fmtHour(rec.trigger)))} ` +
-      c.gray(`(${lead}h before peak → resets mid-peak)`)
+    `  触发时间:   ${c.bold(c.green(fmtHour(rec.trigger)))} ` +
+      c.gray(`(提前 ${lead}h → 窗口在高峰中间重置)`)
   );
   console.log(
-    `  Windows hit:  ${c.gray(rec.naiveWindows + " → ")}${c.bold(c.cyan(rec.smartWindows))} ` +
-      c.gray(`during peak  (${rec.multiplier.toFixed(1)}× more)`)
+    `  窗口数量:   ${c.gray(rec.naiveWindows + " → ")}${c.bold(c.cyan(rec.smartWindows))} ` +
+      c.gray(`个窗口覆盖高峰  (${rec.multiplier.toFixed(1)}× 提升)`)
   );
   console.log("");
-  console.log(c.gray("  Next:  ") + c.cyan(`cc-prewarm install --hour=${rec.trigger}`));
+  console.log(c.gray("  下一步:  ") + c.cyan(`cc-prewarm install --hour=${rec.trigger}`));
   console.log("");
   return rec;
 }
@@ -110,7 +110,7 @@ async function main() {
         const rec = await cmdAnalyze(args, { silent: true });
         hour = rec ? rec.trigger : 6;
         console.log(
-          c.gray(rec ? `\n  Using analyzed trigger hour: ${String(hour).padStart(2, "0")}:00` : `\n  No data — defaulting to 06:00`)
+          c.gray(rec ? `\n  使用分析推荐的触发时间: ${String(hour).padStart(2, "0")}:00` : `\n  无数据，使用默认时间 06:00`)
         );
       }
       await install({ hour, agent, dryRun: !!args["dry-run"] });
@@ -123,7 +123,7 @@ async function main() {
 
     case "status": {
       const { timestamps } = await collectTimestamps();
-      banner("Window status");
+      banner("窗口状态");
       status(timestamps);
       console.log("");
       break;

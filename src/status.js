@@ -10,7 +10,7 @@ const WINDOW_MS = 5 * 60 * 60 * 1000;
 // This is a best-effort *estimate* from local logs, not the live billing API.
 export function status(timestamps) {
   if (timestamps.length === 0) {
-    console.log(c.gray("  No local activity found — can't estimate the window."));
+    console.log(c.gray("  未找到本地活动记录，无法估算窗口状态。"));
     return;
   }
   const ts = [...timestamps].sort((a, b) => a - b);
@@ -24,17 +24,17 @@ export function status(timestamps) {
   const reset = new Date(start.getTime() + WINDOW_MS);
 
   const fmt = (d) =>
-    d.toLocaleString(undefined, { hour: "2-digit", minute: "2-digit", weekday: "short" });
+    d.toLocaleString("zh-CN", { hour: "2-digit", minute: "2-digit", weekday: "short" });
 
   if (now < reset) {
     const mins = Math.round((reset - now) / 60000);
     const h = Math.floor(mins / 60);
     const m = mins % 60;
-    console.log(`  Window opened: ${c.cyan(fmt(start))}`);
-    console.log(`  Resets at:     ${c.bold(c.green(fmt(reset)))}  ${c.gray(`(in ${h}h ${m}m)`)}`);
+    console.log(`  窗口开启于: ${c.cyan(fmt(start))}`);
+    console.log(`  重置时间:   ${c.bold(c.green(fmt(reset)))}  ${c.gray(`(还剩 ${h}小时${m}分钟)`)}`);
   } else {
-    console.log(c.yellow("  No active window — it expired and hasn't been re-opened."));
-    console.log(c.gray(`  Last window opened ${fmt(start)}, expired ${fmt(reset)}.`));
-    console.log(c.gray("  Run `cc-prewarm trigger` to start a fresh one now."));
+    console.log(c.yellow("  当前没有活跃窗口 — 已过期，尚未重新开启。"));
+    console.log(c.gray(`  上次窗口开启于 ${fmt(start)}，过期于 ${fmt(reset)}。`));
+    console.log(c.gray("  运行 cc-prewarm trigger 可立即开启新窗口。"));
   }
 }
