@@ -12,7 +12,13 @@ import { c } from "./ui.js";
 // Codex:        codex exec "<msg>"       (non-interactive exec)
 const AGENTS = {
   claude: { bin: "claude", args: (msg) => ["-p", msg] },
-  codex: { bin: "codex", args: (msg) => ["exec", msg] },
+  // codex exec refuses to run outside a "trusted"/git directory, and would try
+  // to execute model-suggested commands. For a throwaway prewarm we skip the
+  // git check and pin a read-only sandbox so it can never touch the filesystem.
+  codex: {
+    bin: "codex",
+    args: (msg) => ["exec", "--skip-git-repo-check", "--sandbox", "read-only", msg],
+  },
 };
 
 const DEFAULT_MSG = "你好（预热：开启 5 小时额度窗口，无需回复）";
