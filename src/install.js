@@ -6,18 +6,19 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { c } from "./ui.js";
 
-const LABEL = "com.cc-prewarm.daily";
+const LABEL_PREFIX = "com.cc-prewarm";
 const CLI = join(dirname(dirname(fileURLToPath(import.meta.url))), "bin", "cli.js");
 const NODE = process.execPath;
 
-const plistPath = () => join(homedir(), "Library", "LaunchAgents", `${LABEL}.plist`);
+const labelFor = (agent) => `${LABEL_PREFIX}.${agent}`;
+const plistPath = (agent = "claude") => join(homedir(), "Library", "LaunchAgents", `${labelFor(agent)}.plist`);
 
 function macPlist(hour, agent) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>${LABEL}</string>
+  <key>Label</key><string>${labelFor(agent)}</string>
   <key>ProgramArguments</key>
   <array>
     <string>${NODE}</string>
@@ -42,7 +43,7 @@ export async function install({ hour, agent = "claude", dryRun = false }) {
   const hh = String(hour).padStart(2, "0");
 
   if (os === "darwin") {
-    const path = plistPath();
+    const path = plistPath(agent);
     if (dryRun) {
       console.log(c.yellow(`  [预览] 将写入 launchd 配置 → ${path}`));
       console.log(c.gray(`  [预览] 将执行: launchctl load ${path}`));
@@ -87,12 +88,17 @@ export async function install({ hour, agent = "claude", dryRun = false }) {
 
 export async function uninstall() {
   if (platform() === "darwin") {
-    const path = plistPath();
-    if (existsSync(path)) {
-      spawnSync("launchctl", ["unload", path], { stdio: "ignore" });
-      await unlink(path);
-      console.log(c.green("  ✓ 已移除定时任务"));
-    } else {
+    let removed = 0;
+    for (const agent of ["claude", "codex"]) {
+      const path = plistPath(agent);
+      if (existsSync(path)) {
+        spawnSync("launchctl", ["unload", path], { stdio: "ignore" });
+        await unlink(path);
+        console.log(c.green(`  ✓ 已移除 ${agent} 定时任务`));
+        removed++;
+      }
+    }
+    if (removed === 0) {
       console.log(c.gray("  未找到定时任务，无需移除。"));
     }
     return;

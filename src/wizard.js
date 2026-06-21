@@ -106,16 +106,21 @@ export async function wizard() {
     const hour = Math.max(0, Math.min(23, isNaN(parsed) ? defaultHour : parsed));
 
     console.log("");
-    const agentInput = await ask(rl, "你用的是哪个？[1] Claude Code  [2] Codex", "1");
-    const agent = agentInput === "2" ? "codex" : "claude";
-    const agentLabel = agent === "claude" ? "Claude Code" : "Codex";
+    const agentInput = await ask(rl, "你用的是哪个？[1] Claude Code  [2] Codex  [3] 两个都用", "1");
+    const agents = agentInput === "3" ? ["claude", "codex"]
+      : agentInput === "2" ? ["codex"]
+      : ["claude"];
+    const agentLabel = agents.length === 2 ? "Claude Code + Codex" : agents[0] === "claude" ? "Claude Code" : "Codex";
 
     console.log("");
-    console.log(c.gray("  ┌─────────────────────────────────────┐"));
-    console.log(c.gray("  │") + "  触发时间:  " + c.bold(c.cyan(fmtHour(hour))) + " 每天自动执行" + c.gray("       │"));
-    console.log(c.gray("  │") + "  目标工具:  " + c.bold(agentLabel) + c.gray("                       │".slice(agentLabel.length)));
-    console.log(c.gray("  │") + "  执行内容:  发一条极短消息开启窗口" + c.gray("  │"));
-    console.log(c.gray("  └─────────────────────────────────────┘"));
+    console.log(c.gray("  ┌──────────────────────────────────────────┐"));
+    console.log(c.gray("  │") + "  触发时间:  " + c.bold(c.cyan(fmtHour(hour))) + " 每天自动执行" + c.gray("            │"));
+    console.log(c.gray("  │") + "  目标工具:  " + c.bold(agentLabel) + c.gray("                            │".slice(agentLabel.length)));
+    if (agents.length === 2) {
+      console.log(c.gray("  │") + c.gray("              两个工具各发一条，各自开启窗口") + c.gray("  │"));
+    }
+    console.log(c.gray("  │") + "  执行内容:  发一条极短消息开启窗口" + c.gray("       │"));
+    console.log(c.gray("  └──────────────────────────────────────────┘"));
     console.log("");
 
     const ok = await confirm(rl, "确认以上设置？");
@@ -133,14 +138,18 @@ export async function wizard() {
     console.log(c.bold("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"));
     console.log("");
 
-    await install({ hour, agent });
+    for (const agent of agents) {
+      await install({ hour, agent });
+    }
 
     // ── Verify trigger ──
     console.log("");
     const testNow = await confirm(rl, "要现在测试一次触发吗？（会发一条极短消息）");
     if (testNow) {
       console.log("");
-      await trigger({ agent });
+      for (const agent of agents) {
+        await trigger({ agent });
+      }
     }
 
     // ── Done ──
