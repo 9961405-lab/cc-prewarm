@@ -53,6 +53,7 @@ export async function wizard() {
     let rec;
     let defaultHour = 6;
     let detectedAgents = [];
+    const recByAgent = {};
 
     if (!found || allTs.length < 10) {
       console.log(c.yellow("数据不足"));
@@ -79,6 +80,7 @@ export async function wizard() {
           const { hours, total, days } = buildHistogram(data.timestamps);
           const peak = peakWindow(hours);
           const agentRec = recommend(hours);
+          recByAgent[agent] = agentRec;
           console.log(c.bold(`  📊 ${data.label}`) + c.gray(` — ${total} 条事件，跨 ${days} 天`));
           console.log("");
           histogram(hours, peak);
@@ -122,14 +124,7 @@ export async function wizard() {
     console.log(c.bold("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"));
     console.log("");
 
-    console.log(c.gray(`  系统根据你的使用习惯，推荐每天 ${c.bold(c.cyan(fmtHour(defaultHour)))} 自动触发预热。`));
-    console.log(c.gray("  直接按回车使用推荐时间，或输入 0-23 的数字修改。"));
-    console.log("");
-    const hourInput = await ask(rl, `每天几点触发预热？`, fmtHour(defaultHour));
-    const parsed = parseInt(hourInput, 10);
-    const hour = Math.max(0, Math.min(23, isNaN(parsed) ? defaultHour : parsed));
-
-    console.log("");
+    // First: which tool(s)? Each has its own independent quota window.
     const hasBoth = detectedAgents.length === 2;
     const defaultAgent = hasBoth ? "3" : detectedAgents.includes("codex") ? "2" : "1";
     if (hasBoth) {
@@ -140,17 +135,31 @@ export async function wizard() {
     const selectedAgents = agentInput === "3" ? ["claude", "codex"]
       : agentInput === "2" ? ["codex"]
       : ["claude"];
-    const agentLabel = selectedAgents.length === 2 ? "Claude Code + Codex" : selectedAgents[0] === "claude" ? "Claude Code" : "Codex";
+
+    const labelOf = (agent) => (agent === "claude" ? "Claude Code" : "Codex");
+
+    // Each tool has its own 5h window, so each gets its own trigger time —
+    // we ask per-agent, pre-filled with that agent's own recommendation.
+    console.log("");
+    console.log(c.gray("  每个工具的额度窗口是独立的，所以分别设定触发时间。"));
+    console.log(c.gray("  直接按回车使用推荐时间，或输入 0-23 的数字修改。"));
+    console.log("");
+    const schedule = {};
+    for (const agent of selectedAgents) {
+      const recHour = recByAgent[agent] ? recByAgent[agent].trigger : defaultHour;
+      const input = await ask(rl, `${labelOf(agent)} 每天几点触发预热？`, fmtHour(recHour));
+      const p = parseInt(input, 10);
+      schedule[agent] = Math.max(0, Math.min(23, isNaN(p) ? recHour : p));
+    }
 
     console.log("");
-    console.log(c.gray("  ┌──────────────────────────────────────────┐"));
-    console.log(c.gray("  │") + "  触发时间:  " + c.bold(c.cyan(fmtHour(hour))) + " 每天自动执行" + c.gray("            │"));
-    console.log(c.gray("  │") + "  目标工具:  " + c.bold(agentLabel) + c.gray("                            │".slice(agentLabel.length)));
-    if (selectedAgents.length === 2) {
-      console.log(c.gray("  │") + c.gray("              两个工具各发一条，各自开启窗口") + c.gray("  │"));
+    console.log(c.gray("  即将安装以下定时任务："));
+    console.log("");
+    for (const agent of selectedAgents) {
+      console.log("    " + c.cyan("•") + " " + c.bold(labelOf(agent)) +
+        c.gray(" — 每天 ") + c.bold(c.cyan(fmtHour(schedule[agent]))) +
+        c.gray(" 自动发一条极短消息，开启 5h 窗口"));
     }
-    console.log(c.gray("  │") + "  执行内容:  发一条极短消息开启窗口" + c.gray("       │"));
-    console.log(c.gray("  └──────────────────────────────────────────┘"));
     console.log("");
 
     const ok = await confirm(rl, "确认以上设置？");
@@ -169,7 +178,7 @@ export async function wizard() {
     console.log("");
 
     for (const agent of selectedAgents) {
-      await install({ hour, agent });
+      await install({ hour: schedule[agent], agent });
     }
 
     // ── Verify trigger ──
@@ -186,7 +195,10 @@ export async function wizard() {
     console.log("");
     console.log(c.bold(c.green("  ✅ 全部搞定！")));
     console.log("");
-    console.log(c.gray("  从明天起，系统会在每天 " + fmtHour(hour) + " 自动帮你预热窗口。"));
+    console.log(c.gray("  从明天起，系统会自动帮你预热窗口："));
+    for (const agent of selectedAgents) {
+      console.log(c.gray(`    ${labelOf(agent)} — 每天 ${fmtHour(schedule[agent])}`));
+    }
     console.log(c.gray("  你什么都不用做，额度窗口会在工作时段中间自动重置。"));
     console.log("");
     console.log(c.gray("  其他命令："));

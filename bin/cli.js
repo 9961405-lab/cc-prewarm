@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { collectTimestamps, collectForAgent } from "../src/scan.js";
+import { collectTimestamps } from "../src/scan.js";
 import { buildHistogram, recommend, peakWindow, fmtHour } from "../src/analyze.js";
 import { histogram, banner, c } from "../src/ui.js";
 import { install, uninstall } from "../src/install.js";
@@ -161,7 +161,9 @@ async function main() {
       let hour = args.hour !== undefined ? Number(args.hour) : null;
       if (hour === null) {
         const rec = await cmdAnalyze(args, { silent: true });
-        hour = rec ? rec.trigger : 6;
+        // Prefer this agent's own recommendation over the combined one.
+        const agentRec = rec && rec.perAgent && rec.perAgent[agent];
+        hour = agentRec ? agentRec.trigger : rec ? rec.trigger : 6;
         console.log(
           c.gray(rec ? `\n  使用分析推荐的触发时间: ${String(hour).padStart(2, "0")}:00` : `\n  无数据，使用默认时间 06:00`)
         );
@@ -175,10 +177,20 @@ async function main() {
       break;
 
     case "status": {
-      const { timestamps } = await collectTimestamps();
+      const { agents } = await collectTimestamps();
       banner("窗口状态");
-      status(timestamps);
-      console.log("");
+      let any = false;
+      for (const data of Object.values(agents)) {
+        if (!data.found || data.timestamps.length === 0) continue;
+        any = true;
+        console.log(c.bold(`  ${data.label}`) + c.gray("  (各工具的额度窗口相互独立)"));
+        status(data.timestamps);
+        console.log("");
+      }
+      if (!any) {
+        console.log(c.gray("  未找到本地活动记录，无法估算窗口状态。"));
+        console.log("");
+      }
       break;
     }
 

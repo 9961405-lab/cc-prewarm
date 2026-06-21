@@ -89,8 +89,13 @@ export async function install({ hour, agent = "claude", dryRun = false }) {
 export async function uninstall() {
   if (platform() === "darwin") {
     let removed = 0;
-    for (const agent of ["claude", "codex"]) {
-      const path = plistPath(agent);
+    // Per-agent plists, plus the legacy single-task label from older versions.
+    const targets = [
+      ["claude", plistPath("claude")],
+      ["codex", plistPath("codex")],
+      ["legacy", join(homedir(), "Library", "LaunchAgents", `${LABEL_PREFIX}.daily.plist`)],
+    ];
+    for (const [agent, path] of targets) {
       if (existsSync(path)) {
         spawnSync("launchctl", ["unload", path], { stdio: "ignore" });
         await unlink(path);

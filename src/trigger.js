@@ -12,7 +12,7 @@ const AGENTS = {
   codex: { bin: "codex", args: (msg) => ["exec", msg] },
 };
 
-const DEFAULT_MSG = "ping (prewarm: starting my 5h quota window)";
+const DEFAULT_MSG = "你好（预热：开启 5 小时额度窗口，无需回复）";
 
 function run(bin, args) {
   return new Promise((resolve) => {
