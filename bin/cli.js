@@ -5,6 +5,7 @@ import { histogram, banner, c } from "../src/ui.js";
 import { install, uninstall } from "../src/install.js";
 import { status } from "../src/status.js";
 import { trigger } from "../src/trigger.js";
+import { wizard } from "../src/wizard.js";
 
 function parseArgs(argv) {
   const out = { _: [] };
@@ -23,7 +24,11 @@ function help() {
   console.log(`
 ${c.bold(c.cyan("⚡ cc-prewarm"))} ${c.gray("— double your Claude Code / Codex 5-hour windows")}
 
-${c.bold("Usage:")}
+${c.bold("Quick start:")}
+  cc-prewarm                    ${c.green("← interactive setup wizard (recommended)")}
+
+${c.bold("Commands:")}
+  cc-prewarm ${c.cyan("setup")}              Interactive setup wizard (same as bare cc-prewarm)
   cc-prewarm ${c.cyan("analyze")}            Scan local usage, recommend a trigger time
   cc-prewarm ${c.cyan("install")}            Schedule the daily prewarm (uses analyze's pick)
   cc-prewarm ${c.cyan("trigger")}            Fire one prewarm message now
@@ -83,10 +88,18 @@ async function cmdAnalyze(args, { silent } = {}) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const cmd = args._[0] || "help";
+  const cmd = args._[0];
   const agent = args.agent || "claude";
 
+  if (!cmd && !args.help && !args.h) {
+    await wizard();
+    return;
+  }
+
   switch (cmd) {
+    case "setup":
+      await wizard();
+      break;
     case "analyze":
       await cmdAnalyze(args);
       break;
