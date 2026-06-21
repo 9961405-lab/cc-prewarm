@@ -59,7 +59,7 @@ export async function wizard() {
       console.log(c.gray("  没关系，我们手动设定就行！"));
       console.log("");
 
-      const workStart = await ask(rl, "你每天几点开始用 Claude Code？", "9");
+      const workStart = await ask(rl, "你每天几点开始用 Claude Code？（输入 0-23 的数字，如 9 代表上午 9 点）", "9");
       const h = parseInt(workStart, 10);
       if (!isNaN(h) && h >= 0 && h <= 23) {
         defaultHour = ((h - 3) % 24 + 24) % 24;
@@ -98,8 +98,12 @@ export async function wizard() {
     console.log(c.bold("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"));
     console.log("");
 
-    const hourInput = await ask(rl, `每天几点触发预热？`, String(defaultHour));
-    const hour = Math.max(0, Math.min(23, parseInt(hourInput, 10) || defaultHour));
+    console.log(c.gray(`  系统根据你的使用习惯，推荐每天 ${c.bold(c.cyan(fmtHour(defaultHour)))} 自动触发预热。`));
+    console.log(c.gray("  直接按回车使用推荐时间，或输入 0-23 的数字修改。"));
+    console.log("");
+    const hourInput = await ask(rl, `每天几点触发预热？`, fmtHour(defaultHour));
+    const parsed = parseInt(hourInput, 10);
+    const hour = Math.max(0, Math.min(23, isNaN(parsed) ? defaultHour : parsed));
 
     console.log("");
     const agentInput = await ask(rl, "你用的是哪个？[1] Claude Code  [2] Codex", "1");
