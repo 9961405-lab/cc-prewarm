@@ -1,7 +1,7 @@
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { collectTimestamps } from "./scan.js";
-import { buildHistogram, recommend, fmtHour } from "./analyze.js";
+import { buildHistogram, recommend, peakWindow, fmtHour } from "./analyze.js";
 import { histogram, banner, c } from "./ui.js";
 import { install } from "./install.js";
 import { trigger } from "./trigger.js";
@@ -47,19 +47,21 @@ export async function wizard() {
     console.log("");
     process.stdout.write(c.gray("  正在扫描本地数据（只读时间戳，不读消息内容）… "));
 
-    const { timestamps, found } = await collectTimestamps();
+    const { found, agents } = await collectTimestamps();
+    const allTs = [...(agents.claude?.timestamps || []), ...(agents.codex?.timestamps || [])];
 
     let rec;
     let defaultHour = 6;
+    let detectedAgents = [];
 
-    if (!found || timestamps.length < 10) {
+    if (!found || allTs.length < 10) {
       console.log(c.yellow("数据不足"));
       console.log("");
-      console.log(c.gray("  还没有足够的本地使用记录（需要用几天 Claude Code 积累数据）。"));
+      console.log(c.gray("  还没有足够的本地使用记录（需要用几天 Claude Code / Codex 积累数据）。"));
       console.log(c.gray("  没关系，我们手动设定就行！"));
       console.log("");
 
-      const workStart = await ask(rl, "你每天几点开始用 Claude Code？（输入 0-23 的数字，如 9 代表上午 9 点）", "9");
+      const workStart = await ask(rl, "你每天几点开始工作？（输入 0-23 的数字，如 9 代表上午 9 点）", "9");
       const h = parseInt(workStart, 10);
       if (!isNaN(h) && h >= 0 && h <= 23) {
         defaultHour = ((h - 3) % 24 + 24) % 24;
@@ -71,15 +73,37 @@ export async function wizard() {
       console.log(c.green("完成！"));
       console.log("");
 
-      const { hours, total, days } = buildHistogram(timestamps);
+      for (const [agent, data] of Object.entries(agents)) {
+        if (data.timestamps.length >= 10) {
+          detectedAgents.push(agent);
+          const { hours, total, days } = buildHistogram(data.timestamps);
+          const peak = peakWindow(hours);
+          const agentRec = recommend(hours);
+          console.log(c.bold(`  📊 ${data.label}`) + c.gray(` — ${total} 条事件，跨 ${days} 天`));
+          console.log("");
+          histogram(hours, peak);
+          console.log("");
+          console.log("    " + c.green("✓") + " 高峰: " + c.bold(fmtHour(peak.start) + "–" + fmtHour(peak.end)) +
+            c.gray(` (${Math.round((peak.sum / total) * 100)}%)`) +
+            "  建议触发: " + c.bold(c.cyan(fmtHour(agentRec.trigger))) +
+            c.gray(` (${agentRec.naiveWindows}→${agentRec.smartWindows} 窗口)`));
+          console.log("");
+        } else if (data.found && data.timestamps.length > 0) {
+          console.log(c.gray(`  ${data.label}: 仅 ${data.timestamps.length} 条事件，数据不足。`));
+          console.log("");
+        }
+      }
+
+      // Combined recommendation
+      const { hours, total, days } = buildHistogram(allTs);
       rec = recommend(hours);
       defaultHour = rec.trigger;
 
-      console.log(c.gray(`  找到 ${total} 条事件，跨 ${days} 天。你的 24 小时使用分布：`));
-      console.log("");
-      histogram(hours, rec.peak);
-      console.log("");
-      console.log("  " + c.green("✓") + " 峰值时段: " + c.bold(fmtHour(rec.peak.start) + "–" + fmtHour(rec.peak.end)) +
+      if (detectedAgents.length > 1) {
+        console.log(c.bold("  📊 综合分析") + c.gray(` — 两个工具合计 ${total} 条事件，跨 ${days} 天`));
+        console.log("");
+      }
+      console.log("  " + c.green("✓") + " 综合峰值: " + c.bold(fmtHour(rec.peak.start) + "–" + fmtHour(rec.peak.end)) +
         c.gray(` (${Math.round((rec.peak.sum / total) * 100)}% 的使用量集中在这)`));
       console.log("  " + c.green("✓") + " 推荐触发: " + c.bold(c.cyan(fmtHour(rec.trigger))) +
         c.gray(` (提前 ${rec.lead}h → 窗口在高峰中间重置)`));
@@ -106,17 +130,23 @@ export async function wizard() {
     const hour = Math.max(0, Math.min(23, isNaN(parsed) ? defaultHour : parsed));
 
     console.log("");
-    const agentInput = await ask(rl, "你用的是哪个？[1] Claude Code  [2] Codex  [3] 两个都用", "1");
-    const agents = agentInput === "3" ? ["claude", "codex"]
+    const hasBoth = detectedAgents.length === 2;
+    const defaultAgent = hasBoth ? "3" : detectedAgents.includes("codex") ? "2" : "1";
+    if (hasBoth) {
+      console.log(c.gray("  检测到你同时使用 Claude Code 和 Codex，已默认选择「两个都用」。"));
+      console.log("");
+    }
+    const agentInput = await ask(rl, "你用的是哪个？[1] Claude Code  [2] Codex  [3] 两个都用", defaultAgent);
+    const selectedAgents = agentInput === "3" ? ["claude", "codex"]
       : agentInput === "2" ? ["codex"]
       : ["claude"];
-    const agentLabel = agents.length === 2 ? "Claude Code + Codex" : agents[0] === "claude" ? "Claude Code" : "Codex";
+    const agentLabel = selectedAgents.length === 2 ? "Claude Code + Codex" : selectedAgents[0] === "claude" ? "Claude Code" : "Codex";
 
     console.log("");
     console.log(c.gray("  ┌──────────────────────────────────────────┐"));
     console.log(c.gray("  │") + "  触发时间:  " + c.bold(c.cyan(fmtHour(hour))) + " 每天自动执行" + c.gray("            │"));
     console.log(c.gray("  │") + "  目标工具:  " + c.bold(agentLabel) + c.gray("                            │".slice(agentLabel.length)));
-    if (agents.length === 2) {
+    if (selectedAgents.length === 2) {
       console.log(c.gray("  │") + c.gray("              两个工具各发一条，各自开启窗口") + c.gray("  │"));
     }
     console.log(c.gray("  │") + "  执行内容:  发一条极短消息开启窗口" + c.gray("       │"));
@@ -138,7 +168,7 @@ export async function wizard() {
     console.log(c.bold("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"));
     console.log("");
 
-    for (const agent of agents) {
+    for (const agent of selectedAgents) {
       await install({ hour, agent });
     }
 
@@ -147,7 +177,7 @@ export async function wizard() {
     const testNow = await confirm(rl, "要现在测试一次触发吗？（会发一条极短消息）");
     if (testNow) {
       console.log("");
-      for (const agent of agents) {
+      for (const agent of selectedAgents) {
         await trigger({ agent });
       }
     }

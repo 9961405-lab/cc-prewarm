@@ -3,43 +3,95 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-// Where Claude Code drops local telemetry. Each file is JSON containing one or
-// more events; every event carries an ISO `client_timestamp`. We only read the
-// timestamps — never message bodies — to profile *when* you work.
-const TELEMETRY_DIR = join(homedir(), ".claude", "telemetry");
+const HOME = homedir();
 
-const TS_RE = /"client_timestamp":"([^"]+)"/g;
+const SOURCES = {
+  claude: {
+    label: "Claude Code",
+    dir: join(HOME, ".claude", "telemetry"),
+    pattern: /\.json$/,
+    tsRegex: /"client_timestamp":"([^"]+)"/g,
+    recursive: false,
+  },
+  codex: {
+    label: "Codex",
+    dir: join(HOME, ".codex", "sessions"),
+    pattern: /\.jsonl$/,
+    tsRegex: /"timestamp":"([^"]+)"/g,
+    recursive: true,
+  },
+};
 
-// Pull every client_timestamp out of every telemetry file. Robust to the files
-// being single objects, arrays, or newline-delimited — we just regex-scan text.
-export async function collectTimestamps(dir = TELEMETRY_DIR) {
-  if (!existsSync(dir)) {
-    return { timestamps: [], dir, found: false };
-  }
+async function findFiles(dir, pattern, recursive) {
+  if (!existsSync(dir)) return [];
+  const results = [];
 
-  let names;
-  try {
-    names = await readdir(dir);
-  } catch {
-    return { timestamps: [], dir, found: false };
-  }
-
-  const jsonFiles = names.filter((n) => n.endsWith(".json"));
-  const timestamps = [];
-
-  for (const name of jsonFiles) {
-    let text;
-    try {
-      text = await readFile(join(dir, name), "utf8");
-    } catch {
-      continue;
-    }
-    let m;
-    while ((m = TS_RE.exec(text)) !== null) {
-      const d = new Date(m[1]);
-      if (!Number.isNaN(d.getTime())) timestamps.push(d);
+  async function walk(d) {
+    let entries;
+    try { entries = await readdir(d, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const full = join(d, e.name);
+      if (e.isDirectory() && recursive) await walk(full);
+      else if (e.isFile() && pattern.test(e.name)) results.push(full);
     }
   }
 
-  return { timestamps, dir, found: true, fileCount: jsonFiles.length };
+  await walk(dir);
+  return results;
 }
+
+function extractTimestamps(text, regex) {
+  const ts = [];
+  let m;
+  const re = new RegExp(regex.source, regex.flags);
+  while ((m = re.exec(text)) !== null) {
+    const d = new Date(m[1]);
+    if (!Number.isNaN(d.getTime())) ts.push(d);
+  }
+  return ts;
+}
+
+export async function collectTimestamps(dir) {
+  if (dir) {
+    return collectFromDir(dir, /\.json$/, /"client_timestamp":"([^"]+)"/g, false);
+  }
+  const claude = await collectForAgent("claude");
+  const codex = await collectForAgent("codex");
+  return {
+    timestamps: [...claude.timestamps, ...codex.timestamps],
+    found: claude.found || codex.found,
+    agents: { claude, codex },
+  };
+}
+
+export async function collectForAgent(agent) {
+  const src = SOURCES[agent];
+  if (!src) return { timestamps: [], found: false, agent, label: agent };
+
+  const files = await findFiles(src.dir, src.pattern, src.recursive);
+  if (files.length === 0) {
+    return { timestamps: [], dir: src.dir, found: existsSync(src.dir), fileCount: 0, agent, label: src.label };
+  }
+
+  const timestamps = [];
+  for (const file of files) {
+    let text;
+    try { text = await readFile(file, "utf8"); } catch { continue; }
+    timestamps.push(...extractTimestamps(text, src.tsRegex));
+  }
+
+  return { timestamps, dir: src.dir, found: true, fileCount: files.length, agent, label: src.label };
+}
+
+async function collectFromDir(dir, pattern, tsRegex, recursive) {
+  const files = await findFiles(dir, pattern, recursive);
+  const timestamps = [];
+  for (const file of files) {
+    let text;
+    try { text = await readFile(file, "utf8"); } catch { continue; }
+    timestamps.push(...extractTimestamps(text, tsRegex));
+  }
+  return { timestamps, dir, found: timestamps.length > 0, fileCount: files.length };
+}
+
+export { SOURCES };

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { collectTimestamps } from "../src/scan.js";
+import { collectTimestamps, collectForAgent } from "../src/scan.js";
 import { buildHistogram, recommend, peakWindow, fmtHour } from "../src/analyze.js";
 import { histogram, banner, c } from "../src/ui.js";
 import { install, uninstall } from "../src/install.js";
@@ -47,43 +47,96 @@ ${c.gray("享受两个窗口的额度。")}
 `);
 }
 
+function showAgentProfile(label, data, lead) {
+  const { hours, total, days } = buildHistogram(data.timestamps);
+  const peak = peakWindow(hours);
+  const rec = recommend(hours, lead);
+
+  banner(`${label} 使用画像`);
+  console.log(c.gray(`  ${total} 条事件，跨 ${days} 天  (${data.dir})\n`));
+  histogram(hours, peak);
+  console.log("");
+  console.log(
+    `  高峰时段:   ${c.bold(fmtHour(peak.start) + "–" + fmtHour(peak.end))} ` +
+      c.gray(`(${Math.round((peak.sum / total) * 100)}% 集中)`)
+  );
+  console.log(
+    `  建议触发:   ${c.bold(c.green(fmtHour(rec.trigger)))} ` +
+      c.gray(`(提前 ${lead}h → ${rec.naiveWindows} → ${rec.smartWindows} 窗口，${rec.multiplier.toFixed(1)}×)`)
+  );
+  console.log("");
+  return rec;
+}
+
 async function cmdAnalyze(args, { silent } = {}) {
-  const { timestamps, found } = await collectTimestamps();
-  if (!found || timestamps.length === 0) {
+  const { found, agents } = await collectTimestamps();
+  const lead = args.lead ? Number(args.lead) : 3;
+
+  if (!found) {
     if (!silent) {
-      console.log(c.yellow("\n  未找到本地遥测数据（~/.claude/telemetry）。"));
-      console.log(c.gray("  请先使用 Claude Code 一两天积累数据，然后再运行 analyze。\n"));
+      console.log(c.yellow("\n  未找到本地数据。"));
+      console.log(c.gray("  ~/.claude/telemetry (Claude Code)"));
+      console.log(c.gray("  ~/.codex/sessions   (Codex)"));
+      console.log(c.gray("  请先使用一两天积累数据，然后再运行 analyze。\n"));
     }
     return null;
   }
-  const { hours, total, days } = buildHistogram(timestamps);
-  const peak = peakWindow(hours);
-  const lead = args.lead ? Number(args.lead) : 3;
-  const rec = recommend(hours, lead);
 
-  if (silent) return rec;
+  const results = {};
+  for (const [agent, data] of Object.entries(agents)) {
+    if (data.timestamps.length >= 10) {
+      const { hours } = buildHistogram(data.timestamps);
+      results[agent] = recommend(hours, lead);
+      if (!silent) showAgentProfile(data.label, data, lead);
+    } else if (!silent && data.found) {
+      console.log(c.gray(`  ${data.label}: 仅 ${data.timestamps.length} 条事件，数据不足，跳过。\n`));
+    }
+  }
 
-  banner("你的使用画像");
-  console.log(c.gray(`  ${total} 条事件，跨 ${days} 天的本地数据\n`));
-  histogram(hours, peak);
+  // Combined recommendation from all data
+  const allTs = [...agents.claude.timestamps, ...agents.codex.timestamps];
+  if (allTs.length >= 10) {
+    const { hours, total, days } = buildHistogram(allTs);
+    const combinedRec = recommend(hours, lead);
 
-  banner("推荐方案");
-  console.log(
-    `  高峰时段:   ${c.bold(fmtHour(peak.start) + "–" + fmtHour(peak.end))} ` +
-      c.gray(`(${Math.round((peak.sum / total) * 100)}% 的使用量集中在这)`)
-  );
-  console.log(
-    `  触发时间:   ${c.bold(c.green(fmtHour(rec.trigger)))} ` +
-      c.gray(`(提前 ${lead}h → 窗口在高峰中间重置)`)
-  );
-  console.log(
-    `  窗口数量:   ${c.gray(rec.naiveWindows + " → ")}${c.bold(c.cyan(rec.smartWindows))} ` +
-      c.gray(`个窗口覆盖高峰  (${rec.multiplier.toFixed(1)}× 提升)`)
-  );
-  console.log("");
-  console.log(c.gray("  下一步:  ") + c.cyan(`cc-prewarm install --hour=${rec.trigger}`));
-  console.log("");
-  return rec;
+    if (!silent && Object.keys(results).length > 1) {
+      banner("综合推荐（两个工具合并分析）");
+      console.log(c.gray(`  合计 ${total} 条事件，跨 ${days} 天\n`));
+      const peak = peakWindow(hours);
+      histogram(hours, peak);
+      console.log("");
+    }
+
+    if (!silent) {
+      banner("最终推荐");
+      const peak = peakWindow(hours);
+      console.log(
+        `  高峰时段:   ${c.bold(fmtHour(peak.start) + "–" + fmtHour(peak.end))} ` +
+          c.gray(`(${Math.round((peak.sum / total) * 100)}% 的使用量集中在这)`)
+      );
+      console.log(
+        `  触发时间:   ${c.bold(c.green(fmtHour(combinedRec.trigger)))} ` +
+          c.gray(`(提前 ${lead}h → 窗口在高峰中间重置)`)
+      );
+      console.log(
+        `  窗口数量:   ${c.gray(combinedRec.naiveWindows + " → ")}${c.bold(c.cyan(combinedRec.smartWindows))} ` +
+          c.gray(`个窗口覆盖高峰  (${combinedRec.multiplier.toFixed(1)}× 提升)`)
+      );
+      console.log("");
+      console.log(c.gray("  下一步:  ") + c.cyan(`cc-prewarm install --hour=${combinedRec.trigger}`));
+      console.log("");
+    }
+
+    return { ...combinedRec, perAgent: results };
+  }
+
+  // Only one agent had enough data
+  const only = results.claude || results.codex;
+  if (only && !silent) {
+    console.log(c.gray("  下一步:  ") + c.cyan(`cc-prewarm install --hour=${only.trigger}`));
+    console.log("");
+  }
+  return only ? { ...only, perAgent: results } : null;
 }
 
 async function main() {
