@@ -9,8 +9,19 @@
   "files": [
     "bin",
     "src",
-    "README.md"
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/9961405-lab/cc-prewarm.git"
+  },
+  "homepage": "https://github.com/9961405-lab/cc-prewarm#readme",
+  "bugs": {
+    "url": "https://github.com/9961405-lab/cc-prewarm/issues"
+  },
+  "author": "9961405-lab",
   "engines": {
     "node": ">=18"
   },
