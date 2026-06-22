@@ -1,152 +1,154 @@
 # ⚡ cc-prewarm
 
-> 让 Claude Code / Codex 的 **5 小时额度窗口在你工作时段中间重置**,而不是在工作开始时才计时——高峰期等于多拿一个窗口的额度。
->
-> *Pre-warm the 5-hour rolling quota window so it resets in the middle of your workday — get two windows' worth of quota during peak hours instead of one.*
+**English | [中文](README.zh-CN.md)**
 
-零依赖,纯本地分析,同时支持 **Claude Code** 和 **Codex**。
+> Pre-warm the **5-hour rolling quota window** of Claude Code / Codex so it resets *in the middle of your workday* instead of when you start — getting two windows' worth of quota during your peak hours instead of one.
 
----
-
-## 原理
-
-Claude Code 和 Codex 都按 **5 小时滚动窗口** 计额度。这个计时器有两个关键特性:
-
-1. **从你发第一条消息时才开始计时**;
-2. 窗口到期后 **不会自动重启**——要等你下一条消息才开启新窗口。
-
-举例:你的高峰是 **09:00–13:00**,如果 09:00 才开始用,窗口跑 09:00→14:00,整段高峰只覆盖 **一个** 窗口。
-
-但如果你提前在 **06:00** 发一条无关紧要的消息,窗口在 11:00 就重置了——正好落在高峰中间。于是 09:00–13:00 横跨 **两个** 窗口。**同样的工作时间,双倍额度。**
-
-`cc-prewarm` 把这件事自动化:读取你本地的使用记录,算出你真实的高峰时段,然后每天定时发一条极短的"预热"消息,让窗口重置点卡在最有用的位置。
+Zero dependencies, fully local analysis, supports **Claude Code** and **Codex** side by side.
 
 ---
 
-## 安装
+## How it works
 
-> 目前从 GitHub 直接使用(尚未发布到 npm)。需要本机有 Node.js ≥ 18。
+Both Claude Code and Codex meter usage in a **5-hour rolling window**. The clock has two key properties:
+
+1. It **starts the moment you send your first message**;
+2. It does **not** auto-restart when the window expires — it waits until your *next* message to begin a fresh one.
+
+Example: your peak hours are **09:00–13:00**. If you only start at 09:00, the window runs 09:00→14:00 and that whole peak is covered by just **one** window.
+
+But if you fire one throwaway message at **06:00**, the window resets at 11:00 — right in the middle of your peak. Now 09:00–13:00 spans **two** windows. **Same hours, double the quota.**
+
+`cc-prewarm` automates this: it reads your local usage history, figures out when your peak actually is, and schedules a daily one-line "prewarm" message so the reset lands where it helps most.
+
+---
+
+## Install
+
+> Currently used straight from GitHub (not yet published to npm). Requires Node.js ≥ 18.
 
 ```bash
 git clone https://github.com/9961405-lab/cc-prewarm.git
 cd cc-prewarm
-node bin/cli.js          # 启动设置向导
+node bin/cli.js          # launch the setup wizard
 ```
 
-想全局用 `cc-prewarm` 命令,可以建个软链接 / 包装脚本指向 `bin/cli.js`,或 `npm link`。
+To use `cc-prewarm` as a global command, symlink or wrap `bin/cli.js`, or run `npm link`.
 
 ---
 
-## 快速开始:傻瓜式向导
+## Quick start: the wizard
 
-直接运行,跟着 3 步走完就配好了:
+Just run it and follow the 3 steps:
 
 ```bash
 cc-prewarm
 ```
 
-向导会:
+The wizard will:
 
-1. **扫描本地数据**——分别分析 Claude Code 和 Codex 的使用习惯,画出 24 小时分布图,算出各自高峰;
-2. **确认设置**——自动检测你装了哪个/哪些工具,为每个工具分别推荐触发时间(可改);
-3. **安装定时任务**——写入系统定时任务,可选立即测试一次。
+1. **Scan local data** — analyze Claude Code and Codex usage *separately*, draw a 24-hour histogram, and find each tool's peak;
+2. **Confirm settings** — auto-detect which tool(s) you have and recommend a trigger time for each (editable);
+3. **Install the scheduled job** — write the system task, with an optional immediate test.
 
-> 两个工具的额度窗口 **相互独立**,所以各自有独立的触发时间(例如 Claude 06:00、Codex 17:00)。
+> The two tools have **independent** quota windows, so each gets its own trigger time (e.g. Claude 06:00, Codex 17:00).
 
 ---
 
-## 命令
+## Commands
 
 ```bash
-cc-prewarm              # 交互式设置向导(推荐)
-cc-prewarm analyze      # 分析使用习惯,推荐触发时间(分工具 + 综合)
-cc-prewarm install      # 安装定时预热任务
-cc-prewarm trigger      # 立即发一条预热消息
-cc-prewarm status       # 估算各窗口何时重置 + 最近一次预热结果
-cc-prewarm uninstall    # 移除定时任务
+cc-prewarm              # interactive setup wizard (recommended)
+cc-prewarm analyze      # analyze usage, recommend trigger times (per-agent + combined)
+cc-prewarm install      # install the scheduled prewarm job
+cc-prewarm trigger      # fire one prewarm message right now
+cc-prewarm status       # estimate when each window resets + last prewarm result
+cc-prewarm uninstall    # remove the scheduled job
 
-# 常用选项
---agent=claude|codex    指定工具(默认 claude)
---hour=N                指定触发时间(0-23,覆盖自动推荐)
---lead=N                提前于高峰几小时触发(默认 3)
---dry-run               仅预览将执行的操作,不实际安装
+# Common options
+--agent=claude|codex    which tool to prewarm (default: claude)
+--hour=N                trigger hour (0-23, overrides auto recommendation)
+--lead=N                fire this many hours before peak (default: 3)
+--dry-run               preview the actions without installing
 ```
 
-### `analyze` 示例
+### `analyze` example
 
 ```
-  ⚡ Claude Code 使用画像
-  938 条事件,跨 4 天  (/Users/you/.claude/telemetry)
+  ⚡ Claude Code usage profile
+  938 events across 4 days  (/Users/you/.claude/telemetry)
 
-  09:00   92  ██████████████  ◀ 高峰
-  10:00  115  ██████████████████  ◀ 高峰
-  11:00  104  ████████████████  ◀ 高峰
-  12:00  209  ████████████████████████████████  ◀ 高峰
+  09:00   92  ██████████████  ◀ peak
+  10:00  115  ██████████████████  ◀ peak
+  11:00  104  ████████████████  ◀ peak
+  12:00  209  ████████████████████████████████  ◀ peak
   ...
 
-  高峰时段:   09:00–13:00 (55% 集中)
-  建议触发:   06:00 (提前 3h → 1 → 2 窗口,2.0×)
+  Peak hours:   09:00–13:00 (55% of usage)
+  Suggested:    06:00 (3h before peak → 1 → 2 windows, 2.0×)
 
-  ⚡ Codex 使用画像
-  ...各自独立分析...
+  ⚡ Codex usage profile
+  ...analyzed independently...
 
-  ⚡ 最终推荐
-  触发时间:   06:00 (提前 3h → 窗口在高峰中间重置)
-  窗口数量:   1 → 2 个窗口覆盖高峰  (2.0× 提升)
+  ⚡ Final recommendation
+  Trigger at:   06:00 (3h before peak → resets mid-peak)
+  Windows hit:  1 → 2 during peak  (2.0× more)
 ```
+
+> The CLI is currently localized in Chinese; the example above is translated for readability.
 
 ---
 
-## 它是怎么定时的
+## How it schedules
 
-| 系统 | 机制 |
-|------|------|
-| **macOS** | `~/Library/LaunchAgents` 下的 LaunchAgent plist(重启后仍生效),每个工具一个 |
-| **Linux** | 打印一条 `crontab` 行让你添加 |
-| **Windows** | 打印一条 `schtasks` 命令让你运行 |
+| OS | Mechanism |
+|----|-----------|
+| **macOS** | A LaunchAgent plist in `~/Library/LaunchAgents` (survives reboot), one per tool |
+| **Linux** | prints a `crontab` line to add |
+| **Windows** | prints a `schtasks` command to run |
 
-定时任务调用 `cc-prewarm trigger`,它会发一条极短的无头消息(`claude -p` 或 `codex exec --skip-git-repo-check --sandbox read-only`)来开启窗口。
+The scheduled job runs `cc-prewarm trigger`, which sends one tiny headless message (`claude -p` or `codex exec --skip-git-repo-check --sandbox read-only`) to open the window.
 
-### ⚠️ macOS 重要提醒:别让电脑在触发时段睡着
+### ⚠️ macOS: don't let the Mac sleep through the trigger
 
-`launchd` 定时任务 **不会叫醒睡眠中的 Mac**。如果触发时间(比如 06:00)你的电脑在睡觉,预热就不会准点触发,失去意义。
+`launchd` jobs **do not wake a sleeping Mac**. If your machine is asleep at the trigger time (say 06:00), the prewarm won't fire on time and the whole point is lost.
 
-解决办法是让 Mac 到点自动醒(比触发时间早 2 分钟):
+The fix is to have the Mac wake itself shortly before (e.g. 2 minutes early):
 
 ```bash
 sudo pmset repeat wakeorpoweron MTWRFSU 05:58:00
 ```
 
-(改系统电源设置需要管理员密码,请自行执行。)
+(Changing power settings needs admin rights — run it yourself.)
 
 ---
 
-## 可观测性
+## Observability
 
-- **带时间戳的日志**:每次触发都往 `~/.cc-prewarm.log` 写一行带日期时间的结果,`cat` 一下就知道每天有没有准点跑、成没成功。
-- **最近结果**:`cc-prewarm status` 显示每个工具最近一次预热的时间和结果。
-- **失败通知**:定时任务失败(登录过期 / 撞额度上限 / 二进制丢失)会弹 macOS 系统通知。
-- **健康自检**:`status` 会校验定时任务依赖的 `node` 路径是否还在,失效则红字告警。
+- **Timestamped logs** — every trigger appends a dated result line to `~/.cc-prewarm.log`, so "did it run at 06:00 and succeed?" is answerable with a single `cat`.
+- **Last result** — `cc-prewarm status` shows each tool's most recent prewarm time and outcome.
+- **Failure notifications** — a scheduled run that fails (expired login, quota hit, missing binary) fires a macOS notification.
+- **Health self-check** — `status` verifies the `node` path the scheduled job depends on still exists, and warns in red if it's gone.
 
-预热自己产生的活动会被记录在 `~/.cc-prewarm/history.jsonl`,并在分析时 **自动剔除**,避免工具的 ping 把推荐时间越带越偏。
+Activity generated by the prewarms themselves is recorded in `~/.cc-prewarm/history.jsonl` and **automatically excluded** from analysis, so the tool's own pings don't bias the recommended trigger time over time.
 
 ---
 
-## 隐私
+## Privacy
 
-`cc-prewarm` **只读取本地使用记录里的时间戳**——
+`cc-prewarm` only ever reads the **timestamps** in your local usage files —
 - Claude Code: `~/.claude/telemetry/*.json`
 - Codex: `~/.codex/sessions/**/*.jsonl`
 
-**从不读取消息内容,也从不把任何东西传出你的电脑。** `status` 里的窗口重置估算是本地算出来的尽力而为值,不是实时账单数据。
+**It never reads message contents and never sends anything off your machine.** The window-reset estimate in `status` is computed locally and is a best-effort guess, not the live billing figure.
 
 ---
 
-## 局限
+## Caveat
 
-这套玩法依赖目前额度窗口的计量方式。如果 Anthropic 或 OpenAI 改了规则(比如改成按自然日重置、或任意一条消息都重置),这个技巧就失效了。**它是个聪明的取巧,不是保证。**
+This leans on a quirk of how the window is metered today. If Anthropic or OpenAI change the rules (e.g. reset on a calendar day, or on *any* message), the trick stops working. **It's a clever hack, not a guarantee.**
 
-预热消息本身也会消耗一点点额度——这正是它能开启窗口的原因。
+The prewarm message itself consumes a sliver of quota — which is exactly what opens the window.
 
 ---
 
