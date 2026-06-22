@@ -2,6 +2,10 @@
 
 **English | [中文](README.zh-CN.md)**
 
+[![npm version](https://img.shields.io/npm/v/cc-prewarm.svg)](https://www.npmjs.com/package/cc-prewarm)
+[![license](https://img.shields.io/npm/l/cc-prewarm.svg)](LICENSE)
+[![node](https://img.shields.io/node/v/cc-prewarm.svg)](https://nodejs.org)
+
 > Pre-warm the **5-hour rolling quota window** of Claude Code / Codex so it resets *in the middle of your workday* instead of when you start — so your peak hours can span **two** windows instead of one, easing rate-limit pressure.
 
 Zero dependencies, fully local analysis, supports **Claude Code** and **Codex** side by side.
@@ -25,12 +29,25 @@ But if you fire one throwaway message at **06:00**, the window resets at 11:00 �
 
 ## Install
 
-> Currently used straight from GitHub (not yet published to npm). Requires Node.js ≥ 18.
+Requires Node.js ≥ 18.
+
+```bash
+npm install -g cc-prewarm
+cc-prewarm                # launch the setup wizard
+```
+
+Or run without installing globally:
+
+```bash
+npx cc-prewarm
+```
+
+Or from source (for hacking on it):
 
 ```bash
 git clone https://github.com/9961405-lab/cc-prewarm.git
 cd cc-prewarm
-node bin/cli.js          # launch the setup wizard
+node bin/cli.js
 ```
 
 To use `cc-prewarm` as a global command, symlink or wrap `bin/cli.js`, or run `npm link`.
