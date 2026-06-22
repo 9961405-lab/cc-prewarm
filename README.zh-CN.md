@@ -6,6 +6,8 @@
 [![license](https://img.shields.io/npm/l/cc-prewarm.svg)](LICENSE)
 [![node](https://img.shields.io/node/v/cc-prewarm.svg)](https://nodejs.org)
 
+📖 **[项目主页 →](https://9961405-lab.github.io/cc-prewarm/)**
+
 > 让 Claude Code / Codex 的 **5 小时额度窗口在你工作时段中间重置**,而不是在工作开始时才计时——高峰期可以横跨 **两个** 窗口,缓解额度紧张。
 
 零依赖,纯本地分析,同时支持 **Claude Code** 和 **Codex**。

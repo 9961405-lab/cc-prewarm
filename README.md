@@ -6,6 +6,8 @@
 [![license](https://img.shields.io/npm/l/cc-prewarm.svg)](LICENSE)
 [![node](https://img.shields.io/node/v/cc-prewarm.svg)](https://nodejs.org)
 
+📖 **[Project page →](https://9961405-lab.github.io/cc-prewarm/)**
+
 > Pre-warm the **5-hour rolling quota window** of Claude Code / Codex so it resets *in the middle of your workday* instead of when you start — so your peak hours can span **two** windows instead of one, easing rate-limit pressure.
 
 Zero dependencies, fully local analysis, supports **Claude Code** and **Codex** side by side.
