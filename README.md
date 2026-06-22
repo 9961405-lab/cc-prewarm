@@ -131,17 +131,25 @@ cc-prewarm uninstall    # remove the scheduled job
 
 The scheduled job runs `cc-prewarm trigger`, which sends one tiny headless message (`claude -p` or `codex exec --skip-git-repo-check --sandbox read-only`) to open the window.
 
-### ⚠️ macOS: don't let the Mac sleep through the trigger
+### ⚠️ macOS: only matters if your trigger is in the early hours
 
-`launchd` jobs **do not wake a sleeping Mac**. If your machine is asleep at the trigger time (say 06:00), the prewarm won't fire on time and the whole point is lost.
+`launchd` jobs **do not wake a sleeping Mac**. If your earliest trigger falls during typical sleep hours, you need a scheduled wake. **If the Mac is already on during your trigger time (daytime), skip this step entirely.**
 
-The fix is to have the Mac wake itself shortly before (e.g. 2 minutes early):
+Fill in **(your earliest trigger time) minus 2 minutes**:
 
 ```bash
-sudo pmset repeat wakeorpoweron MTWRFSU 05:58:00
+sudo pmset repeat wakeorpoweron MTWRFSU HH:MM:00
 ```
 
-(Changing power settings needs admin rights — run it yourself.)
+Examples:
+
+| Your earliest trigger | Command |
+|---|---|
+| 06:00 | `sudo pmset repeat wakeorpoweron MTWRFSU 05:58:00` |
+| 08:00 | `sudo pmset repeat wakeorpoweron MTWRFSU 07:58:00` |
+| 14:00 (daytime) | **skip it** — your Mac is already awake |
+
+Not sure what time you scheduled? Run `cc-prewarm doctor` — it prints the exact command for you. Changing power settings needs admin rights.
 
 ---
 

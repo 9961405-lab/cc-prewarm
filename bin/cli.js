@@ -277,15 +277,31 @@ async function cmdDoctor() {
   if (existsSync(STABLE_DIR)) ok(`应用固化目录存在: ${STABLE_DIR}`);
   else warn(`应用尚未固化到 ${STABLE_DIR}（运行 cc-prewarm install 时会自动固化）`);
 
-  // pmset wake (macOS only)
+  // pmset wake (macOS only).
+  // Only nag if the earliest installed trigger is in typical sleep hours
+  // (00:00-09:00). Daytime triggers don't need a wake schedule.
   if (platform() === "darwin") {
     const r = spawnSync("pmset", ["-g", "sched"], { encoding: "utf8" });
     const text = r.stdout || "";
-    if (/wakepoweron at/i.test(text) || /wake at \d/i.test(text)) {
+    const hasWake = /wakepoweron at/i.test(text) || /wake at \d/i.test(text);
+
+    const hours = Object.values(health).map((h) => h.hour).filter((n) => Number.isInteger(n));
+    const earliest = hours.length ? Math.min(...hours) : null;
+    const needsWake = earliest !== null && earliest < 9;
+
+    if (hasWake) {
       ok("已配置 pmset 定时唤醒（睡眠时也能准点触发）");
+    } else if (needsWake) {
+      // Wake two minutes before the earliest trigger.
+      const totalMin = (earliest * 60 - 2 + 1440) % 1440;
+      const hh = String(Math.floor(totalMin / 60)).padStart(2, "0");
+      const mm = String(totalMin % 60).padStart(2, "0");
+      warn(`最早触发是 ${String(earliest).padStart(2, "0")}:00，落在睡眠时段 — 需要让 Mac 提前自动醒`);
+      info(`修复（管理员密码）：sudo pmset repeat wakeorpoweron MTWRFSU ${hh}:${mm}:00`);
+    } else if (earliest !== null) {
+      ok(`最早触发 ${String(earliest).padStart(2, "0")}:00 在白天，机器肯定醒着，无需配置 pmset 唤醒`);
     } else {
-      warn("未配置 pmset 定时唤醒 — 如果 Mac 经常在触发时段睡眠，预热不会准点触发");
-      info("修复（管理员密码）：sudo pmset repeat wakeorpoweron MTWRFSU 05:58:00");
+      info("尚未安装定时任务 — 不需要 pmset 唤醒");
     }
   }
 

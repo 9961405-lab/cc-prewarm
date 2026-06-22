@@ -322,9 +322,16 @@ cc-prewarm            <span class="comment"># 启动 3 步设置向导</span></p
   <div class="callout">
     <i class="ti ti-alert-triangle" aria-hidden="true"></i>
     <div>
-      <p class="title">macOS 用户必做一步</p>
-      <p>launchd 不会叫醒睡眠中的 Mac。如果触发时段电脑在睡觉,预热就失效了。</p>
-      <pre>sudo pmset repeat wakeorpoweron MTWRFSU 05:58:00</pre>
+      <p class="title">macOS:让 Mac 准点醒(只对清晨触发的人重要)</p>
+      <p>launchd 不会叫醒睡眠中的 Mac。如果你最早一次触发在凌晨/清晨(白天机器本来就醒着,这一步不用做),按"<strong>最早触发时间减 2 分钟</strong>"设置自动唤醒:</p>
+      <pre>sudo pmset repeat wakeorpoweron MTWRFSU HH:MM:00</pre>
+      <p style="margin-top: 10px;">举例:</p>
+      <ul style="margin: 4px 0 0; padding-left: 20px; font-size: 13px; line-height: 1.7; color: var(--warning-text);">
+        <li>触发在 06:00 → 改成 <code style="background: var(--bg); padding: 1px 6px; border-radius: 4px;">05:58:00</code></li>
+        <li>触发在 08:00 → 改成 <code style="background: var(--bg); padding: 1px 6px; border-radius: 4px;">07:58:00</code></li>
+        <li>触发在 14:00 → 不用设(下午机器肯定醒着)</li>
+      </ul>
+      <p style="margin-top: 10px; font-size: 12px;">不知道自己设了几点?跑 <code style="background: var(--bg); padding: 1px 6px; border-radius: 4px;">cc-prewarm doctor</code> 看。</p>
     </div>
   </div>
 </section>

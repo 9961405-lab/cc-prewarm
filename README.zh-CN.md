@@ -127,17 +127,25 @@ cc-prewarm uninstall    # 移除定时任务
 
 定时任务调用 `cc-prewarm trigger`,它会发一条极短的无头消息(`claude -p` 或 `codex exec --skip-git-repo-check --sandbox read-only`)来开启窗口。
 
-### ⚠️ macOS 重要提醒:别让电脑在触发时段睡着
+### ⚠️ macOS:只对清晨触发的人重要
 
-`launchd` 定时任务 **不会叫醒睡眠中的 Mac**。如果触发时间(比如 06:00)你的电脑在睡觉,预热就不会准点触发,失去意义。
+`launchd` 定时任务 **不会叫醒睡眠中的 Mac**。如果你最早一次触发在凌晨/清晨(机器还在睡觉的时段),预热就不会准点触发,失去意义。**白天本来就开着机的话,完全不用做这一步。**
 
-解决办法是让 Mac 到点自动醒(比触发时间早 2 分钟):
+把"**最早一次触发时间减 2 分钟**"填进下面命令:
 
 ```bash
-sudo pmset repeat wakeorpoweron MTWRFSU 05:58:00
+sudo pmset repeat wakeorpoweron MTWRFSU HH:MM:00
 ```
 
-(改系统电源设置需要管理员密码,请自行执行。)
+举例:
+
+| 你的最早触发时间 | 命令 |
+|---|---|
+| 06:00 | `sudo pmset repeat wakeorpoweron MTWRFSU 05:58:00` |
+| 08:00 | `sudo pmset repeat wakeorpoweron MTWRFSU 07:58:00` |
+| 14:00(白天) | **不用设**——下午机器肯定开着 |
+
+不知道自己设的是几点?跑 `cc-prewarm doctor` 会直接告诉你需要的命令。改系统电源设置需要管理员密码。
 
 ---
 
