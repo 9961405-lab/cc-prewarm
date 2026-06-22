@@ -84,13 +84,23 @@ function childEnv() {
   return { ...process.env, PATH: merged.join(delimiter) };
 }
 
-function run(bin, args) {
+function run(bin, args, { verbose = false } = {}) {
   return new Promise((resolve) => {
+    // Capture stdout + stderr so we can show the agent's own error message on
+    // failure. On success we throw it away — we only need the tail of the
+    // error stream to make "exit 1" actually debuggable.
     const child = spawn(bin, args, {
-      stdio: "ignore",
+      stdio: verbose ? "inherit" : ["ignore", "pipe", "pipe"],
       env: childEnv(),
       cwd: ensureScratch(),
     });
+    let out = "";
+    let err = "";
+    const MAX = 2000;
+    if (!verbose) {
+      child.stdout?.on("data", (d) => { if (out.length < MAX) out += d.toString(); });
+      child.stderr?.on("data", (d) => { if (err.length < MAX) err += d.toString(); });
+    }
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
@@ -103,8 +113,10 @@ function run(bin, args) {
     });
     child.on("close", (code, signal) => {
       clearTimeout(timer);
-      if (timedOut) resolve({ ok: false, reason: "timeout", code: signal || "timeout" });
-      else resolve({ ok: code === 0, code });
+      const stderr = err.trim().slice(-MAX);
+      const stdout = out.trim().slice(-MAX);
+      if (timedOut) resolve({ ok: false, reason: "timeout", code: signal || "timeout", stderr, stdout });
+      else resolve({ ok: code === 0, code, stderr, stdout });
     });
   });
 }
@@ -119,7 +131,7 @@ function categorize(reason, code) {
   return `退出码 ${code}`;
 }
 
-export async function trigger({ agent = "claude", message = DEFAULT_MSG } = {}) {
+export async function trigger({ agent = "claude", message = DEFAULT_MSG, verbose = false } = {}) {
   const spec = AGENTS[agent];
   if (!spec) {
     console.log(c.red(`  未知工具 "${agent}"，请使用 "claude" 或 "codex"。`));
@@ -141,7 +153,7 @@ export async function trigger({ agent = "claude", message = DEFAULT_MSG } = {}) 
     return false;
   }
 
-  const res = await run(resolved, spec.args(message));
+  const res = await run(resolved, spec.args(message), { verbose });
   if (res.ok) {
     console.log(c.green("成功 ✓"));
     console.log(c.gray("  5 小时窗口已开启，约 5 小时后重置。"));
@@ -153,9 +165,33 @@ export async function trigger({ agent = "claude", message = DEFAULT_MSG } = {}) 
   const reason = categorize(res.reason, res.code);
   const tag = res.reason === "timeout" ? "超时" : res.reason === "not-found" ? "未找到" : `退出码 ${res.code}`;
   console.log(c.yellow(tag));
+
+  // On failure, show the agent's own error output so "exit 1" stops being a
+  // black box. Keep it tight — last ~10 lines is plenty for the real signal.
+  const tail = (s) => s.split("\n").filter(Boolean).slice(-10).join("\n");
+  const stderrTail = tail(res.stderr || "");
+  const stdoutTail = tail(res.stdout || "");
+  if (stderrTail) {
+    console.log(c.gray("  ── 报错输出 ──"));
+    console.log(stderrTail.split("\n").map((l) => "  " + c.gray(l)).join("\n"));
+  } else if (stdoutTail) {
+    console.log(c.gray("  ── 输出 ──"));
+    console.log(stdoutTail.split("\n").map((l) => "  " + c.gray(l)).join("\n"));
+  } else {
+    console.log(c.gray("  (没有抓到任何输出 — 可加 --verbose 重跑看实时输出)"));
+  }
+
   logLine(`${agent} 预热失败：${reason}`);
+  if (stderrTail) logLine(`${agent} stderr 尾部：${stderrTail.replace(/\n/g, " | ")}`);
+
   notify("cc-prewarm 预热失败", `${labelOf(agent)}：${reason}`);
-  await recordTrigger({ agent, ok: false, code: res.code ?? res.reason, reason });
+  await recordTrigger({
+    agent,
+    ok: false,
+    code: res.code ?? res.reason,
+    reason,
+    stderr: stderrTail || undefined,
+  });
   return false;
 }
 

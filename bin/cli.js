@@ -51,6 +51,7 @@ ${c.bold("选项:")}
   --hour=N                 指定触发时间（0-23，覆盖自动推荐）
   --lead=N                 提前于高峰几小时触发（默认: 3）
   --days=N                 history/status 看最近几天（默认: 7）
+  --verbose                trigger 时直接显示 agent 的全部输出（调试 exit 1 用）
   --dry-run                仅展示将执行的操作，不实际安装
 
 ${c.gray("原理：5 小时窗口从第一条消息开始计时、过期不自动重启。")}
@@ -384,7 +385,7 @@ async function main() {
     }
 
     case "trigger":
-      await trigger({ agent, message: args.message });
+      await trigger({ agent, message: args.message, verbose: !!args.verbose });
       break;
 
     case "status":

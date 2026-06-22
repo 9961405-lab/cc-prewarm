@@ -12,11 +12,13 @@ export const HISTORY_PATH = HISTORY;
 // itself (the agent writes its session a few seconds after we fire).
 export const PREWARM_MATCH_MS = 3 * 60 * 1000;
 
-export async function recordTrigger({ agent, ok, code, reason, ts = new Date() }) {
+export async function recordTrigger({ agent, ok, code, reason, stderr, ts = new Date() }) {
   try {
     if (!existsSync(DIR)) await mkdir(DIR, { recursive: true });
     const row = { ts: ts.toISOString(), agent, ok, code };
     if (reason) row.reason = reason;
+    // Keep stderr short — we just need the diagnostic signal, not a transcript.
+    if (stderr) row.stderr = stderr.slice(0, 500);
     await appendFile(HISTORY, JSON.stringify(row) + "\n");
   } catch { /* never let bookkeeping break the actual prewarm */ }
 }

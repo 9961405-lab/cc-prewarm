@@ -1,6 +1,6 @@
 {
   "name": "cc-prewarm",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Pre-warm your Claude Code / Codex 5-hour quota window so it resets in the middle of your workday — doubling the windows you get during peak hours.",
   "type": "module",
   "bin": {
