@@ -2,7 +2,7 @@
 
 **English | [中文](README.zh-CN.md)**
 
-> Pre-warm the **5-hour rolling quota window** of Claude Code / Codex so it resets *in the middle of your workday* instead of when you start — getting two windows' worth of quota during your peak hours instead of one.
+> Pre-warm the **5-hour rolling quota window** of Claude Code / Codex so it resets *in the middle of your workday* instead of when you start — so your peak hours can span **two** windows instead of one, easing rate-limit pressure.
 
 Zero dependencies, fully local analysis, supports **Claude Code** and **Codex** side by side.
 
@@ -17,7 +17,7 @@ Both Claude Code and Codex meter usage in a **5-hour rolling window**. The clock
 
 Example: your peak hours are **09:00–13:00**. If you only start at 09:00, the window runs 09:00→14:00 and that whole peak is covered by just **one** window.
 
-But if you fire one throwaway message at **06:00**, the window resets at 11:00 — right in the middle of your peak. Now 09:00–13:00 spans **two** windows. **Same hours, double the quota.**
+But if you fire one throwaway message at **06:00**, the window resets at 11:00 — right in the middle of your peak. Now 09:00–13:00 spans **two** windows. *Same working hours, two quota windows instead of one — a meaningful boost during peak, not literally 2× of everything.*
 
 `cc-prewarm` automates this: it reads your local usage history, figures out when your peak actually is, and schedules a daily one-line "prewarm" message so the reset lands where it helps most.
 
@@ -60,9 +60,12 @@ The wizard will:
 ```bash
 cc-prewarm              # interactive setup wizard (recommended)
 cc-prewarm analyze      # analyze usage, recommend trigger times (per-agent + combined)
-cc-prewarm install      # install the scheduled prewarm job
+cc-prewarm install      # install the scheduled prewarm job (stages app to ~/.cc-prewarm/app)
 cc-prewarm trigger      # fire one prewarm message right now
-cc-prewarm status       # estimate when each window resets + last prewarm result
+cc-prewarm status       # window state + confidence + 7-day success rate
+cc-prewarm doctor       # health check: node, agent CLIs, scheduler, pmset wake
+cc-prewarm logs         # tail of ~/.cc-prewarm.log
+cc-prewarm history      # recent triggers + failure-reason aggregation
 cc-prewarm uninstall    # remove the scheduled job
 
 # Common options

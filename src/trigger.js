@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, isAbsolute, delimiter } from "node:path";
 import { c } from "./ui.js";
@@ -9,47 +9,56 @@ const labelOf = (agent) => (agent === "claude" ? "Claude Code" : agent === "code
 
 // Timestamped, color-free one-liner that lands in ~/.cc-prewarm.log (the plist's
 // StandardOutPath). This is what makes "did it run at 06:00, did it work?"
-// answerable at a glance — the pain point from before.
+// answerable at a glance.
 function logLine(text) {
   const ts = new Date().toLocaleString("zh-CN", { hour12: false });
   console.log(`[${ts}] ${text}`);
 }
 
-// Best-effort macOS desktop notification on failure, so a silently-failing
-// scheduled run (expired login, quota hit, missing node) is actually visible.
 function notify(title, body) {
   if (process.platform !== "darwin") return;
   try {
     const osa = `display notification ${JSON.stringify(body)} with title ${JSON.stringify(title)}`;
     spawn("osascript", ["-e", osa], { stdio: "ignore" });
-  } catch {
-    // Notification is a nicety; never let it break anything.
-  }
+  } catch { /* notifications are a nicety */ }
 }
 
-// The actual prewarm: fire one throwaway message through whichever agent CLI is
-// installed, in non-interactive/headless mode. This consumes a sliver of quota,
-// which is exactly the point — it *starts* the 5-hour window.
-//
-// Claude Code:  claude -p "<msg>"        (print mode, exits immediately)
-// Codex:        codex exec "<msg>"       (non-interactive exec)
+// Empty, owned-by-us scratch dir for codex to run in. Avoids picking up
+// arbitrary CLAUDE.md / AGENTS.md / .git context from wherever the user
+// happened to be when they invoked us.
+const SCRATCH = join(homedir(), ".cc-prewarm", "scratch");
+function ensureScratch() {
+  try { mkdirSync(SCRATCH, { recursive: true }); } catch { /* ignore */ }
+  return SCRATCH;
+}
+
 const AGENTS = {
   claude: { bin: "claude", args: (msg) => ["-p", msg] },
-  // codex exec refuses to run outside a "trusted"/git directory, and would try
-  // to execute model-suggested commands. For a throwaway prewarm we skip the
-  // git check and pin a read-only sandbox so it can never touch the filesystem.
+  // codex exec refuses to run outside a "trusted"/git directory by default and
+  // would otherwise try to execute model-suggested commands. We:
+  //  - skip the trust gate (it's our throwaway dir),
+  //  - pin a read-only sandbox so it can't write the filesystem even if it tried,
+  //  - cd into an empty scratch dir to avoid picking up any project context.
   codex: {
     bin: "codex",
-    args: (msg) => ["exec", "--skip-git-repo-check", "--sandbox", "read-only", msg],
+    args: (msg) => [
+      "exec",
+      "--skip-git-repo-check",
+      "--sandbox", "read-only",
+      "--cd", ensureScratch(),
+      msg,
+    ],
   },
 };
 
-const DEFAULT_MSG = "你好（预热：开启 5 小时额度窗口，无需回复）";
+// One short Chinese line that asks the model not to do anything — keeps the
+// prewarm a one-token round trip even if some agent tries to be helpful.
+const DEFAULT_MSG = "预热心跳，仅为开启 5 小时额度窗口。请直接回复「ok」，不要执行任何命令或读写文件。";
 
-// launchd/cron run with a minimal PATH that usually excludes ~/bin, Homebrew,
-// and npm-global dirs — so a bare "claude" won't be found even though it works
-// in your interactive shell. Resolve to an absolute path against the likely
-// install locations so scheduled runs behave the same as manual ones.
+// Hard ceiling on a single prewarm. Headless replies usually return in seconds;
+// if it's still running after this, something is wrong (network, hung agent).
+const TIMEOUT_MS = 90_000;
+
 const SEARCH_DIRS = [
   join(homedir(), "bin"),
   join(homedir(), ".claude", "local"),
@@ -69,9 +78,6 @@ function resolveBin(name) {
   return null;
 }
 
-// Augment PATH for the child: some agent CLIs are node scripts whose
-// `#!/usr/bin/env node` shebang needs `node` on PATH — which launchd's minimal
-// PATH lacks. Prepend our known install dirs (which include the node binary).
 function childEnv() {
   const existing = (process.env.PATH || "").split(delimiter).filter(Boolean);
   const merged = [...SEARCH_DIRS, ...existing].filter((d, i, a) => a.indexOf(d) === i);
@@ -80,10 +86,37 @@ function childEnv() {
 
 function run(bin, args) {
   return new Promise((resolve) => {
-    const child = spawn(bin, args, { stdio: "ignore", env: childEnv() });
-    child.on("error", () => resolve({ ok: false, reason: "not-found" }));
-    child.on("close", (code) => resolve({ ok: code === 0, code }));
+    const child = spawn(bin, args, {
+      stdio: "ignore",
+      env: childEnv(),
+      cwd: ensureScratch(),
+    });
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      try { child.kill("SIGTERM"); } catch { /* ignore */ }
+      setTimeout(() => { try { child.kill("SIGKILL"); } catch { /* ignore */ } }, 3000);
+    }, TIMEOUT_MS);
+    child.on("error", () => {
+      clearTimeout(timer);
+      resolve({ ok: false, reason: "not-found" });
+    });
+    child.on("close", (code, signal) => {
+      clearTimeout(timer);
+      if (timedOut) resolve({ ok: false, reason: "timeout", code: signal || "timeout" });
+      else resolve({ ok: code === 0, code });
+    });
   });
+}
+
+// Map exit codes / reasons to a human-friendly category for history + logs.
+function categorize(reason, code) {
+  if (reason === "not-found") return "命令未找到";
+  if (reason === "timeout") return `执行超时（>${Math.round(TIMEOUT_MS / 1000)}s）`;
+  // Both agents tend to exit 1 for auth/quota — we can't disambiguate without
+  // capturing stderr, which we deliberately don't (privacy).
+  if (code === 1) return "退出码 1（多为登录过期或额度已满）";
+  return `退出码 ${code}`;
 }
 
 export async function trigger({ agent = "claude", message = DEFAULT_MSG } = {}) {
@@ -94,8 +127,6 @@ export async function trigger({ agent = "claude", message = DEFAULT_MSG } = {}) 
   }
   process.stdout.write(c.dim(`  正在通过 ${spec.bin} 发送预热消息… `));
 
-  // Node self-check: if this very process is running, node exists — but the agent
-  // CLI (and, for node-script CLIs, the node it shebangs to) might not.
   const resolved = resolveBin(spec.bin);
   if (!resolved) {
     console.log(c.red("未找到"));
@@ -103,20 +134,14 @@ export async function trigger({ agent = "claude", message = DEFAULT_MSG } = {}) 
       c.gray(`  请先安装 ${labelOf(agent)}，或使用 --agent=` +
         (agent === "claude" ? "codex" : "claude"))
     );
-    logLine(`${agent} 预热失败：未找到 ${spec.bin} 二进制`);
+    const reason = "命令未找到";
+    logLine(`${agent} 预热失败：${reason}`);
     notify("cc-prewarm 预热失败", `${labelOf(agent)}：找不到 ${spec.bin} 命令`);
-    await recordTrigger({ agent, ok: false, code: "not-found" });
+    await recordTrigger({ agent, ok: false, code: "not-found", reason });
     return false;
   }
 
   const res = await run(resolved, spec.args(message));
-  if (res.reason === "not-found") {
-    console.log(c.red("未找到"));
-    logLine(`${agent} 预热失败：${spec.bin} 无法执行`);
-    notify("cc-prewarm 预热失败", `${labelOf(agent)}：${spec.bin} 无法执行`);
-    await recordTrigger({ agent, ok: false, code: "not-found" });
-    return false;
-  }
   if (res.ok) {
     console.log(c.green("成功 ✓"));
     console.log(c.gray("  5 小时窗口已开启，约 5 小时后重置。"));
@@ -124,11 +149,14 @@ export async function trigger({ agent = "claude", message = DEFAULT_MSG } = {}) 
     await recordTrigger({ agent, ok: true, code: 0 });
     return true;
   }
-  console.log(c.yellow(`退出码 ${res.code}`));
-  logLine(`${agent} 预热失败：退出码 ${res.code}（可能是登录过期或额度已满）`);
-  notify("cc-prewarm 预热失败", `${labelOf(agent)}：退出码 ${res.code}，可能需重新登录`);
-  await recordTrigger({ agent, ok: false, code: res.code });
+
+  const reason = categorize(res.reason, res.code);
+  const tag = res.reason === "timeout" ? "超时" : res.reason === "not-found" ? "未找到" : `退出码 ${res.code}`;
+  console.log(c.yellow(tag));
+  logLine(`${agent} 预热失败：${reason}`);
+  notify("cc-prewarm 预热失败", `${labelOf(agent)}：${reason}`);
+  await recordTrigger({ agent, ok: false, code: res.code ?? res.reason, reason });
   return false;
 }
 
-export { DEFAULT_MSG };
+export { DEFAULT_MSG, TIMEOUT_MS };
