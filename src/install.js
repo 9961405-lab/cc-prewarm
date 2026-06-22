@@ -1,5 +1,5 @@
 import { writeFile, unlink, mkdir } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -113,4 +113,28 @@ export async function uninstall() {
   } else {
     console.log(c.gray("  请从 crontab 中移除 cc-prewarm 相关行（运行 crontab -e）。"));
   }
+}
+
+// Health check for installed launchd tasks: confirms the node binary baked into
+// each plist still exists (the whole pipeline hangs off ~/bin/node, which is
+// easy to lose), plus the hour it's scheduled for. macOS only.
+export function checkInstalled() {
+  const out = {};
+  if (platform() !== "darwin") return out;
+  for (const agent of ["claude", "codex"]) {
+    const path = plistPath(agent);
+    if (!existsSync(path)) continue;
+    let text = "";
+    try { text = readFileSync(path, "utf8"); } catch { /* ignore */ }
+    const nodeMatch = text.match(/<string>([^<]*node)<\/string>/);
+    const hourMatch = text.match(/<key>Hour<\/key>\s*<integer>(\d+)<\/integer>/);
+    const nodePath = nodeMatch ? nodeMatch[1] : null;
+    out[agent] = {
+      plistPath: path,
+      hour: hourMatch ? Number(hourMatch[1]) : null,
+      nodePath,
+      nodeOk: nodePath ? existsSync(nodePath) : false,
+    };
+  }
+  return out;
 }

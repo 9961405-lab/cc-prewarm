@@ -2,10 +2,11 @@
 import { collectTimestamps } from "../src/scan.js";
 import { buildHistogram, recommend, peakWindow, fmtHour } from "../src/analyze.js";
 import { histogram, banner, c } from "../src/ui.js";
-import { install, uninstall } from "../src/install.js";
+import { install, uninstall, checkInstalled } from "../src/install.js";
 import { status } from "../src/status.js";
 import { trigger } from "../src/trigger.js";
 import { wizard } from "../src/wizard.js";
+import { lastResults } from "../src/state.js";
 
 function parseArgs(argv) {
   const out = { _: [] };
@@ -53,7 +54,10 @@ function showAgentProfile(label, data, lead) {
   const rec = recommend(hours, lead);
 
   banner(`${label} 使用画像`);
-  console.log(c.gray(`  ${total} 条事件，跨 ${days} 天  (${data.dir})\n`));
+  const excluded = data.prewarmExcluded
+    ? c.gray(`，已剔除 ${data.prewarmExcluded} 条预热产生的记录`)
+    : "";
+  console.log(c.gray(`  ${total} 条事件，跨 ${days} 天${excluded}  (${data.dir})\n`));
   histogram(hours, peak);
   console.log("");
   console.log(
@@ -178,13 +182,29 @@ async function main() {
 
     case "status": {
       const { agents } = await collectTimestamps();
+      const last = await lastResults();
+      const health = checkInstalled();
       banner("窗口状态");
       let any = false;
-      for (const data of Object.values(agents)) {
+      for (const [key, data] of Object.entries(agents)) {
         if (!data.found || data.timestamps.length === 0) continue;
         any = true;
         console.log(c.bold(`  ${data.label}`) + c.gray("  (各工具的额度窗口相互独立)"));
         status(data.timestamps);
+        const lr = last[key];
+        if (lr) {
+          const when = new Date(lr.ts).toLocaleString("zh-CN", { hour12: false });
+          console.log(
+            lr.ok
+              ? c.gray(`  最近一次预热: ${when}  `) + c.green("成功 ✓")
+              : c.gray(`  最近一次预热: ${when}  `) + c.red(`失败 (${lr.code})`)
+          );
+        }
+        const h = health[key];
+        if (h && !h.nodeOk) {
+          console.log(c.red(`  ⚠ 定时任务的 node 路径已失效: ${h.nodePath}`));
+          console.log(c.gray("    请重新运行 cc-prewarm 安装，或修复 node 路径。"));
+        }
         console.log("");
       }
       if (!any) {

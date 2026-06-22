@@ -2,6 +2,26 @@ import { readdir, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { prewarmTimes, PREWARM_MATCH_MS } from "./state.js";
+
+// Drop activity that the tool's own prewarms generated, so our pings don't get
+// counted as "usage" and bias the recommended trigger time over time.
+function excludePrewarms(timestamps, prewarmMs) {
+  if (prewarmMs.length === 0) return { kept: timestamps, removed: 0 };
+  const sorted = [...prewarmMs].sort((a, b) => a - b);
+  const isPrewarm = (t) => {
+    // binary search for the nearest recorded prewarm time
+    let lo = 0, hi = sorted.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (sorted[mid] < t) lo = mid + 1; else hi = mid;
+    }
+    const candidates = [sorted[lo], sorted[lo - 1]].filter((x) => x !== undefined);
+    return candidates.some((p) => Math.abs(p - t) <= PREWARM_MATCH_MS);
+  };
+  const kept = timestamps.filter((d) => !isPrewarm(d.getTime()));
+  return { kept, removed: timestamps.length - kept.length };
+}
 
 const HOME = homedir();
 
@@ -73,14 +93,23 @@ export async function collectForAgent(agent) {
     return { timestamps: [], dir: src.dir, found: existsSync(src.dir), fileCount: 0, agent, label: src.label };
   }
 
-  const timestamps = [];
+  const raw = [];
   for (const file of files) {
     let text;
     try { text = await readFile(file, "utf8"); } catch { continue; }
-    timestamps.push(...extractTimestamps(text, src.tsRegex));
+    raw.push(...extractTimestamps(text, src.tsRegex));
   }
 
-  return { timestamps, dir: src.dir, found: true, fileCount: files.length, agent, label: src.label };
+  const { kept, removed } = excludePrewarms(raw, await prewarmTimes(agent));
+  return {
+    timestamps: kept,
+    dir: src.dir,
+    found: true,
+    fileCount: files.length,
+    prewarmExcluded: removed,
+    agent,
+    label: src.label,
+  };
 }
 
 async function collectFromDir(dir, pattern, tsRegex, recursive) {
