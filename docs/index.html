@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cc-prewarm — 让 Claude Code / Codex 的 5 小时额度窗口在高峰中间重置</title>
+<meta name="description" content="一个零依赖 CLI:扫描你本地使用习惯,自动在高峰前预热 Claude Code / Codex,让 5 小时额度窗口的重置点落在工作时段中间,高峰可横跨两个窗口。">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="⚡ cc-prewarm">
+<meta property="og:description" content="让 Claude Code / Codex 的 5 小时额度窗口在你高峰时段中间重置。高峰可横跨两个窗口,缓解额度紧张。">
+<meta property="og:url" content="https://9961405-lab.github.io/cc-prewarm/">
+<meta name="twitter:card" content="summary">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
+
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-secondary: #f5f4ef;
+  --bg-tertiary: #ebe9e0;
+  --text: #1f1f1d;
+  --text-secondary: #595955;
+  --text-tertiary: #8a8a83;
+  --border: rgba(0,0,0,0.10);
+  --border-strong: rgba(0,0,0,0.18);
+  --accent: #185fa5;
+  --accent-bg: #e6f1fb;
+  --accent-text: #0c447c;
+  --success: #0f6e56;
+  --success-bg: #e1f5ee;
+  --warning: #854f0b;
+  --warning-bg: #faeeda;
+  --warning-text: #633806;
+  --warm: #d85a30;
+  --warm-bg: #fae3d5;
+  --warm-text: #993c1d;
+  --code-bg: #f1efe8;
+  --shadow: none;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1d1c1a;
+    --bg-secondary: #262522;
+    --bg-tertiary: #2f2e2a;
+    --text: #f0eee6;
+    --text-secondary: #b8b6ad;
+    --text-tertiary: #82817b;
+    --border: rgba(255,255,255,0.10);
+    --border-strong: rgba(255,255,255,0.18);
+    --accent: #85b7eb;
+    --accent-bg: #0c447c;
+    --accent-text: #b5d4f4;
+    --success: #5dcaa5;
+    --success-bg: #085041;
+    --warning: #efb56e;
+    --warning-bg: #4a2f08;
+    --warning-text: #fac775;
+    --warm: #f0997b;
+    --warm-bg: #5a2818;
+    --warm-text: #f5c4b3;
+    --code-bg: #2a2925;
+  }
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  font-size: 16px; line-height: 1.7;
+  color: var(--text); background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+main {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 3rem 1.5rem 4rem;
+}
+h1, h2, h3 { font-weight: 500; letter-spacing: -0.01em; color: var(--text); }
+h1 { font-size: 32px; margin: 0; }
+h3 { font-size: 14px; color: var(--text-tertiary); font-weight: 400; margin: 0 0 14px; text-transform: uppercase; letter-spacing: 0.05em; }
+p { margin: 0; }
+code, pre { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+hr { border: 0; border-top: 0.5px solid var(--border); margin: 0; }
+
+.hero { text-align: center; padding: 2rem 0 1rem; }
+.brand { display: inline-flex; align-items: center; gap: 12px; font-size: 32px; font-weight: 500; }
+.brand .ti-bolt { font-size: 36px; color: #ef9f27; }
+.tagline { font-size: 17px; color: var(--text-secondary); margin: 12px 0 0; }
+.subline { font-size: 13px; color: var(--text-tertiary); margin: 6px 0 0; }
+.badges { margin-top: 16px; display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.badges img { height: 20px; }
+
+section { margin: 2.5rem 0; }
+
+.timeline-card {
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 12px;
+}
+.timeline-header {
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin-bottom: 10px; flex-wrap: wrap; gap: 6px;
+}
+.timeline-header .title { font-size: 14px; font-weight: 500; }
+.timeline-header .meta { font-size: 12px; color: var(--text-secondary); }
+.timeline-header .meta.good { color: var(--success); }
+.timeline svg { width: 100%; height: auto; display: block; }
+
+pre.shell {
+  background: var(--code-bg);
+  border-radius: 8px;
+  padding: 16px 18px;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text);
+  overflow-x: auto;
+}
+pre.shell .comment { color: var(--text-tertiary); }
+.hint { font-size: 12px; color: var(--text-tertiary); margin: 10px 2px 0; }
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.step {
+  background: var(--bg);
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+}
+.step-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.step-head .ti { font-size: 20px; color: var(--accent); }
+.step-head .name { font-size: 14px; font-weight: 500; }
+.step-body { font-size: 13px; color: var(--text-secondary); line-height: 1.6; }
+@media (max-width: 560px) { .steps { grid-template-columns: 1fr; } }
+
+.cmd-table {
+  background: var(--bg);
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.cmd-row {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  border-bottom: 0.5px solid var(--border);
+}
+.cmd-row:last-child { border-bottom: 0; }
+.cmd-row code {
+  padding: 12px 16px;
+  font-size: 13px;
+  color: var(--accent);
+  background: transparent;
+}
+.cmd-row .desc {
+  padding: 12px 16px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+@media (max-width: 560px) {
+  .cmd-row { grid-template-columns: 1fr; }
+  .cmd-row code { padding-bottom: 0; }
+  .cmd-row .desc { padding-top: 4px; }
+}
+
+.callout {
+  background: var(--warning-bg);
+  border-radius: 12px;
+  padding: 16px 18px;
+  display: flex; gap: 14px; align-items: flex-start;
+}
+.callout .ti-alert-triangle { font-size: 22px; color: var(--warning); flex-shrink: 0; margin-top: 2px; }
+.callout .title { font-size: 14px; font-weight: 500; color: var(--warning-text); margin: 0 0 6px; }
+.callout p { font-size: 13px; color: var(--warning-text); margin: 0 0 10px; line-height: 1.6; }
+.callout pre {
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text);
+  overflow-x: auto;
+}
+
+.links {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 1.5rem;
+}
+.links a {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 12px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--text);
+  text-decoration: none;
+  transition: background 0.15s ease;
+}
+.links a:hover { background: var(--bg-tertiary); text-decoration: none; }
+.links .ti { font-size: 18px; }
+@media (max-width: 560px) { .links { grid-template-columns: 1fr; } }
+
+footer { text-align: center; font-size: 12px; color: var(--text-tertiary); margin: 2rem 0 0; }
+
+@media print {
+  main { max-width: none; padding: 1.5rem; }
+  .callout { break-inside: avoid; }
+  section { break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+<main>
+
+<header class="hero">
+  <div class="brand">
+    <i class="ti ti-bolt" aria-hidden="true"></i>
+    <span>cc-prewarm</span>
+  </div>
+  <p class="tagline">让 Claude Code / Codex 的 5 小时额度窗口在高峰中间重置</p>
+  <p class="subline">高峰时段可能横跨两个窗口,缓解额度紧张</p>
+  <div class="badges">
+    <a href="https://www.npmjs.com/package/cc-prewarm"><img src="https://img.shields.io/npm/v/cc-prewarm.svg" alt="npm version"></a>
+    <a href="https://www.npmjs.com/package/cc-prewarm"><img src="https://img.shields.io/npm/l/cc-prewarm.svg" alt="license"></a>
+    <a href="https://nodejs.org"><img src="https://img.shields.io/node/v/cc-prewarm.svg" alt="node"></a>
+  </div>
+</header>
+
+<section>
+  <h3>一图看懂原理</h3>
+
+  <div class="timeline-card timeline">
+    <div class="timeline-header">
+      <span class="title">不用 cc-prewarm</span>
+      <span class="meta">高峰整段挤在一个窗口里</span>
+    </div>
+    <svg viewBox="0 0 600 90" role="img" aria-label="时间线:09:00 才发第一条消息,窗口跑到 14:00 就过期">
+      <g font-family="inherit" font-size="11">
+        <line x1="20" y1="60" x2="580" y2="60" stroke="var(--border)" stroke-width="1"/>
+        <g fill="var(--text-tertiary)" text-anchor="middle">
+          <text x="20" y="78">06</text><text x="113" y="78">09</text><text x="206" y="78">12</text><text x="300" y="78">15</text><text x="393" y="78">18</text><text x="486" y="78">21</text><text x="580" y="78">24</text>
+        </g>
+        <rect x="113" y="35" width="156" height="20" rx="3" fill="#b5d4f4" stroke="#185fa5" stroke-width="0.5"/>
+        <text x="191" y="49" text-anchor="middle" fill="#0c447c" font-weight="500">窗口 1  09:00–14:00</text>
+        <rect x="113" y="20" width="125" height="12" rx="2" fill="#f0997b"/>
+        <text x="175" y="14" text-anchor="middle" fill="#993c1d" font-size="10">工作高峰 09:00–13:00</text>
+      </g>
+    </svg>
+  </div>
+
+  <div class="timeline-card timeline">
+    <div class="timeline-header">
+      <span class="title">用 cc-prewarm(06:00 自动预热)</span>
+      <span class="meta good">高峰横跨两个窗口</span>
+    </div>
+    <svg viewBox="0 0 600 110" role="img" aria-label="时间线:06:00 自动预热开启窗口,11:00 重置进入第二个窗口,工作高峰跨越两个窗口">
+      <g font-family="inherit" font-size="11">
+        <line x1="20" y1="80" x2="580" y2="80" stroke="var(--border)" stroke-width="1"/>
+        <g fill="var(--text-tertiary)" text-anchor="middle">
+          <text x="20" y="98">06</text><text x="113" y="98">09</text><text x="206" y="98">12</text><text x="300" y="98">15</text><text x="393" y="98">18</text><text x="486" y="98">21</text><text x="580" y="98">24</text>
+        </g>
+        <rect x="20" y="55" width="156" height="20" rx="3" fill="#9fe1cb" stroke="#0f6e56" stroke-width="0.5"/>
+        <text x="98" y="69" text-anchor="middle" fill="#04342c" font-weight="500">窗口 1  06:00–11:00</text>
+        <rect x="176" y="55" width="156" height="20" rx="3" fill="#9fe1cb" stroke="#0f6e56" stroke-width="0.5"/>
+        <text x="254" y="69" text-anchor="middle" fill="#04342c" font-weight="500">窗口 2  11:00–16:00</text>
+        <rect x="113" y="40" width="125" height="12" rx="2" fill="#f0997b"/>
+        <text x="175" y="34" text-anchor="middle" fill="#993c1d" font-size="10">工作高峰 09:00–13:00</text>
+        <circle cx="20" cy="55" r="4" fill="#1d9e75"/>
+        <line x1="20" y1="20" x2="20" y2="51" stroke="#1d9e75" stroke-width="1" stroke-dasharray="2 2"/>
+        <text x="20" y="16" text-anchor="middle" fill="#0f6e56" font-size="10" font-weight="500">06:00 预热</text>
+      </g>
+    </svg>
+  </div>
+</section>
+
+<section>
+  <h3>一行安装</h3>
+  <pre class="shell">npm install -g cc-prewarm
+cc-prewarm            <span class="comment"># 启动 3 步设置向导</span></pre>
+  <p class="hint">需要 Node.js 18 或以上</p>
+</section>
+
+<section>
+  <h3>向导做哪三件事</h3>
+  <div class="steps">
+    <div class="step">
+      <div class="step-head"><i class="ti ti-chart-bar" aria-hidden="true"></i><span class="name">扫描使用习惯</span></div>
+      <p class="step-body">分别读 Claude Code 和 Codex 本地记录,画 24 小时分布图</p>
+    </div>
+    <div class="step">
+      <div class="step-head"><i class="ti ti-bullseye" aria-hidden="true"></i><span class="name">推荐触发时间</span></div>
+      <p class="step-body">为每个工具单独推荐:在你高峰前 3 小时触发</p>
+    </div>
+    <div class="step">
+      <div class="step-head"><i class="ti ti-calendar-time" aria-hidden="true"></i><span class="name">安装定时任务</span></div>
+      <p class="step-body">写入系统定时任务,以后每天自动跑,你不用管</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h3>常用命令</h3>
+  <div class="cmd-table">
+    <div class="cmd-row"><code>cc-prewarm status</code><div class="desc">窗口状态 + 最近一次预热结果 + 7 天成功率</div></div>
+    <div class="cmd-row"><code>cc-prewarm doctor</code><div class="desc">体检 node / claude / codex / 定时任务 / 唤醒</div></div>
+    <div class="cmd-row"><code>cc-prewarm trigger</code><div class="desc">立刻发一次预热(失败会显示真实报错)</div></div>
+    <div class="cmd-row"><code>cc-prewarm logs</code><div class="desc">查看最近触发日志(带时间戳、彩色)</div></div>
+    <div class="cmd-row"><code>cc-prewarm history</code><div class="desc">最近触发记录 + 失败原因聚合</div></div>
+    <div class="cmd-row"><code>cc-prewarm uninstall</code><div class="desc">不想用了,一键移除定时任务</div></div>
+  </div>
+</section>
+
+<section>
+  <div class="callout">
+    <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+    <div>
+      <p class="title">macOS 用户必做一步</p>
+      <p>launchd 不会叫醒睡眠中的 Mac。如果触发时段电脑在睡觉,预热就失效了。</p>
+      <pre>sudo pmset repeat wakeorpoweron MTWRFSU 05:58:00</pre>
+    </div>
+  </div>
+</section>
+
+<hr>
+
+<section style="margin: 1.5rem 0 0;">
+  <div class="links">
+    <a href="https://www.npmjs.com/package/cc-prewarm"><i class="ti ti-package" aria-hidden="true"></i><span>npm</span></a>
+    <a href="https://github.com/9961405-lab/cc-prewarm"><i class="ti ti-brand-github" aria-hidden="true"></i><span>GitHub</span></a>
+    <a href="https://github.com/9961405-lab/cc-prewarm/blob/main/README.zh-CN.md"><i class="ti ti-book" aria-hidden="true"></i><span>中文文档</span></a>
+  </div>
+</section>
+
+<footer>MIT · 零依赖 · Node ≥ 18 · 仅读本地时间戳,不上传任何数据</footer>
+
+</main>
+</body>
+</html>
